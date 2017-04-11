@@ -385,7 +385,7 @@ template <typename FLT_T>
 void calc_saxs<FLT_T>::load_pdb_atomic(const string & filename)
 {
     parse_pdb<FLT_T> parser(filename);
-    parser.set_verbose_level(typename decltype(parser)::verbose_levels(verbose_lvl_));
+    parser.set_verbose_level(decltype(parser)::verbose_levels(verbose_lvl_));
     v_models_ = parser.all_models_as_complex_atoms();
     v_bodies_ = v_models_[0];
 }
