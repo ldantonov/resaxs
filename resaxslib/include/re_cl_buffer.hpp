@@ -331,4 +331,4 @@ namespace cl
 
 }
 
-#endif RE_CL_BUFFER_HPP
+#endif // RE_CL_BUFFER_HPP
