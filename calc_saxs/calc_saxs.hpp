@@ -22,11 +22,14 @@
 //
 ///////////////////////////////////////////////////////////////////////////////
 
+#include <vector>
+#include <string>
 #include <memory>
 #include "resaxs.hpp"
 #include "utils.hpp"
 #include "host_debye.hpp"
 #include "saxs_algorithm.hpp"
+#include "saxs_profile.hpp"
 
 namespace resaxs
 {
@@ -44,8 +47,29 @@ namespace resaxs
             DEBUG
         };
 
-        calc_saxs(const std::string & bodies_filename, const std::string & exe_base_path, bool atomic, FLT_T q_min, FLT_T q_max, unsigned int q_n,
-            FLT_T water_weight, verbose_levels verbose_lvl);
+        struct profile_param
+        {
+        public:
+            profile_param(const FLT_T value, bool fit) : value_(value), fit_(fit) {}
+            profile_param(const profile_param&) = default;
+
+            operator const FLT_T () const { return value_; }
+
+        private:
+            bool fit_;
+            FLT_T value_;
+        };
+
+        struct profile_params
+        {
+        public:
+            profile_param scale_;           // scale of the profile relative to the reference
+            profile_param water_weight_;    // weight parameter for the water layer
+            saxs_profile<FLT_T> ref_profile;       // reference (e.g. experimental) profile
+        };
+
+        calc_saxs(const std::vector<std::string> & bodies_filenames, const std::string & exe_base_path, bool atomic, FLT_T q_min, FLT_T q_max, unsigned int q_n,
+            profile_params params, verbose_levels verbose_lvl);
         calc_saxs(const calc_saxs & other);
         void set_verbose_level(verbose_levels verbose_lvl = NORMAL) { verbose_lvl_ = verbose_lvl; }
 
@@ -67,9 +91,10 @@ namespace resaxs
         void parse_bodies(const std::string & filename);
 #endif
         void load_pdb(const std::string & filename);
-        void load_pdb_atomic(const std::string & filename);
+        const std::vector<std::vector<real4>> load_pdb_atomic(const std::string & filename) const;
+        void load_pdb_atomic(const std::vector<std::string> & filenames);
 
-        FLT_T water_weight_;
+        profile_params params_;
         verbose_levels verbose_lvl_;
     };
 

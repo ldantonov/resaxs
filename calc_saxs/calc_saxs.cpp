@@ -41,18 +41,26 @@ namespace resaxs
 {
 
 template <typename FLT_T>
-calc_saxs<FLT_T>::calc_saxs(const string & bodies_filename, const string & exe_base_path, bool atomic, FLT_T q_min, FLT_T q_max, unsigned int q_n,
-    FLT_T water_weight, verbose_levels verbose_lvl) :
-    water_weight_(water_weight), verbose_lvl_(verbose_lvl)
+calc_saxs<FLT_T>::calc_saxs(const vector<string> & bodies_filenames, const string & exe_base_path, bool atomic, FLT_T q_min, FLT_T q_max, unsigned int q_n,
+    profile_params params, verbose_levels verbose_lvl) :
+    params_(params), verbose_lvl_(verbose_lvl)
 {
-    try
+    // get the q-values from the ref profile if possible
+    if (params_.ref_profile)
+        v_q_ = params_.ref_profile.v_q_;
+    else
     {
+        // generate the q-values
         v_q_.resize(q_n);
         FLT_T step = (q_n > 0) ? (q_max - q_min) / (q_n - 1) : 0;
         for (unsigned int i = 0; i < q_n; ++i)
             v_q_[i] = q_min + i * step;
+    }
+
+    try
+    {
         if (atomic)
-            ;// atomic_form_factors::generate(v_q_, t_factors_);
+            ;
         else
         {
             saxs_params_io::load_reals(exe_base_path + "form_factors-q_vector.dat", v_q_);
@@ -68,17 +76,19 @@ calc_saxs<FLT_T>::calc_saxs(const string & bodies_filename, const string & exe_b
     n_factors_ = (unsigned int)(t_factors_.size() / v_q_.size());
     v_Iq_.resize(v_q_.size());
 
-    //parse_bodies(bodies_filename);
     if (atomic)
-        load_pdb_atomic(bodies_filename);
+        load_pdb_atomic(bodies_filenames);
     else
-        load_pdb(bodies_filename);
+    {
+        load_pdb(bodies_filenames[0]);
+        v_models_.push_back(v_bodies_);
+    }
 }
 
 template <typename FLT_T>
 calc_saxs<FLT_T>::calc_saxs(const calc_saxs & other) :
     v_models_(v_models_), v_bodies_(other.v_bodies_), v_q_(other.v_q_), n_factors_(other.n_factors_), t_factors_(other.t_factors_), v_Iq_(other.v_Iq_),
-    water_weight_(other.water_weight_),verbose_lvl_(other.verbose_lvl_)
+    params_(other.params_),verbose_lvl_(other.verbose_lvl_)
 {
 }
 
@@ -101,20 +111,19 @@ void calc_saxs<FLT_T>::cl_saxs(algorithm::saxs_enum alg_pick, const string & dev
     using saxs_class = algorithm::i_saxs<FLT_T, alg_base>;
 
     clock_t t1 = clock();
-    //unique_ptr<saxs_class> saxs_alg(algorithm::saxs<FLT_T>::template create<alg_base>(alg_pick));
     unique_ptr<saxs_class> saxs_alg(algorithm::create_saxs_ocl<FLT_T>());
     auto & saxs_params = saxs_alg->access_params();
     saxs_params.initialize(v_q_, v_bodies_, devices, wf_size);
 
     auto & water_params = saxs_params.get_implicit_water_params();
-    water_params.set_water_weight(water_weight_);
+    water_params.set_water_weight(params_.water_weight_);
     if (verbose_lvl_ >= DETAILS)
-        cout << "Water layer contrast: " << fixed << water_weight_ << endl;
+        cout << "Water layer contrast: " << fixed << params_.water_weight_ << endl;
     //saxs_params.get_ff_params().set_expansion_factor(1.04f);
     saxs_alg->initialize();
 
     saxs_alg->calc_curve(v_bodies_, v_Iq_);
-    cout << endl << "SAXS calc time: " << double(t1) * 1000 / CLOCKS_PER_SEC << "ms" << endl << endl;
+    cout << endl << "SAXS calc time: " << double(clock() - t1) * 1000 / CLOCKS_PER_SEC << "ms" << endl << endl;
 
     t1 = clock();
     constexpr int recalc_it = 0;
@@ -126,13 +135,15 @@ void calc_saxs<FLT_T>::cl_saxs(algorithm::saxs_enum alg_pick, const string & dev
     t1 = clock() - t1;
     if (recalc_it > 0)
         cout << endl << "SAXS step time: " << double(t1) * 1000 / CLOCKS_PER_SEC / recalc_it << "ms/iteration" << endl << endl;
-
+#if 0
     auto & rsasa = water_params.access_rsasa();
 
     ofstream log("rsasa.log");
     for_each(rsasa.begin(), rsasa.end(), [&log](FLT_T x){log << x << endl; });
+#endif
 
     // TEMP BELOW
+#if 0
     return;
     ofstream outfile("sp1.int");
     for (unsigned int i = 0; i < v_q_.size(); ++i)
@@ -174,6 +185,7 @@ void calc_saxs<FLT_T>::cl_saxs(algorithm::saxs_enum alg_pick, const string & dev
             outfile << fixed << v_q_[i] << "     \t" << v_Iq_[i] << endl;
         }
     }
+#endif
 }
 
 template <typename FLT_T>
@@ -382,11 +394,24 @@ void calc_saxs<FLT_T>::load_pdb(const string & filename)
 }
 
 template <typename FLT_T>
-void calc_saxs<FLT_T>::load_pdb_atomic(const string & filename)
+auto calc_saxs<FLT_T>::load_pdb_atomic(const string & filename) const -> const std::vector<std::vector<real4>>
 {
     parse_pdb<FLT_T> parser(filename);
     parser.set_verbose_level(typename decltype(parser)::verbose_levels(verbose_lvl_));
-    v_models_ = parser.all_models_as_complex_atoms();
+    return parser.all_models_as_complex_atoms();
+}
+
+template <typename FLT_T>
+void calc_saxs<FLT_T>::load_pdb_atomic(const std::vector<std::string> & filenames)
+{
+    v_models_.clear();
+
+    for (auto & filename : filenames)
+    {
+        const auto & models = load_pdb_atomic(filename);
+        v_models_.insert(v_models_.end(), models.begin(), models.end());
+    }
+
     v_bodies_ = v_models_[0];
 }
 

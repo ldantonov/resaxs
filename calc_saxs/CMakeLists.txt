@@ -21,6 +21,7 @@ add_executable(calc_saxs ${_all_sources})
 
 if (WIN32)
   set(EXTRA_LIBS "")
+  SET_TARGET_PROPERTIES(calc_saxs PROPERTIES LINK_FLAGS "setargv.obj")
 else()
   set(EXTRA_LIBS -ldl)
 endif()

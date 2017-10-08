@@ -69,6 +69,36 @@ string getexepath()
 }
 #endif
 
+
+class water_weight_range : public TCLAP::Constraint<float>
+{
+public:
+    virtual std::string description() const override
+    {
+        return "[0, 4.0]";
+    }
+
+    virtual std::string shortID() const override
+    {
+        return description();
+    }
+
+    virtual bool check(const float& value) const override
+    {
+        return value >= 0 && value <= 4.0;
+    }
+};
+
+/// Create a profile_param out of command line arguments. The fit option will be set appropriately.
+///     arg             - command line argument
+///     fit_filename    - command line argument for the intensity file to use for fitting
+template <typename FLT_T>
+typename calc_saxs<FLT_T>::profile_param make_param(const TCLAP::ValueArg<float> & arg, const TCLAP::ValueArg<string> & fit_filename)
+{
+    return { const_cast<TCLAP::ValueArg<float> &>(arg).getValue(), !arg.isSet() && !const_cast<TCLAP::ValueArg<string> &>(fit_filename).getValue().empty() };
+};
+
+
 int main(int argc, char ** argv)
 {
     //report_opencl_caps();
@@ -97,25 +127,29 @@ int main(int argc, char ** argv)
 
         TCLAP::SwitchArg dp_alg("", "double", "Turn on double precision.", false);
         cmd.add(dp_alg);
-        TCLAP::ValueArg<string> dev_arg("d", "device", "OpenCL device to use", false, "cpu", "device descriptor: {platform-id}-{device-id}, e.g. 0-0");
+        TCLAP::ValueArg<string> dev_arg("d", "device", "OpenCL device to use", false, "cpu", "device descriptor: {platform-id}-{device-id}, e.g. 0-0; cpu; gpu");
         cmd.add(dev_arg);
 
-        TCLAP::ValueArg<float> water_weight("w", "water", "Weight of the water layer contribution.", false, 0, "floating-point value");
+        TCLAP::ValueArg<string> fit_filename("f", "fit", "Fit to experimental profile", false, "", "file name");
+        cmd.add(fit_filename);
+
+        TCLAP::ValueArg<float> scale("s", "scale", "SAXS profile intensity scale.", false, 1.0, "floating-point value");
+
+        water_weight_range ww_range;
+        TCLAP::ValueArg<float> water_weight("w", "water", "Weight of the water layer contribution.", false, 0, &ww_range);
         cmd.add(water_weight);
 
-        TCLAP::ValueArg<unsigned int> q_n("n", "q_n", "Number of q values.", false, 500, "floating-point value");
+        TCLAP::ValueArg<unsigned int> q_n("n", "q_n", "Number of q values.", false, 500, "whole number");
         cmd.add(q_n);
         TCLAP::ValueArg<float> q_max("", "q_max", "Maximum value for q.", false, 0.75, "floating-point value");
         cmd.add(q_max);
         TCLAP::ValueArg<float> q_min("", "q_min", "Starting value for q.", false, 0, "floating-point value");
         cmd.add(q_min);
 
-        TCLAP::SwitchArg ensemble_arg("e", "ensemble", "Calculate ensemble average, if more than one conformation is available.", false);
-        cmd.add(ensemble_arg);
+        TCLAP::ValueArg<string> out_filename("o", "outfile", "output file of SAXS intensities", true, "", "file name");
+        cmd.add(out_filename);
 
-        TCLAP::ValueArg<string> int_filename("o", "outfile", "output file of SAXS intensities", true, "", "file name");
-        cmd.add(int_filename);
-
+        // A list of input PDB files
         TCLAP::UnlabeledMultiArg<string> pdb_filenames("pdb_files", "input PDB file names", true, "");
         cmd.add(pdb_filenames);
 
@@ -127,19 +161,25 @@ int main(int argc, char ** argv)
         //string algorithm = alg_arg.getValue();
         bool dp = dp_alg.getValue();
 
+        if (water_weight.isSet() && fit_filename.getValue().empty())
+            cout << "test";
+
         if (n_verbose_lvl >= calc_saxs<float>::NORMAL)
             std::cout << std::endl << "----- Calculating SAXS curve -----" << std::endl << std::endl;
 
         if (dp)
         {
-            calc_saxs<double> calc(pdb_filenames.getValue()[0], getexepath(), true, q_min.getValue(), q_max.getValue(), q_n.getValue(),
-                water_weight.getValue(),
-                calc_saxs<double>::verbose_levels(n_verbose_lvl));
+            calc_saxs<double>::profile_params params{ make_param<double>(scale, fit_filename), 
+                make_param<double>(water_weight, fit_filename) };
+            calc_saxs<double> calc(pdb_filenames.getValue(), getexepath(), true, q_min.getValue(), q_max.getValue(), q_n.getValue(),
+                params, calc_saxs<double>::verbose_levels(n_verbose_lvl));
             if (device == "host")
                 calc.host_saxs();
 
-            cout << calc.v_bodies_.size() << " bodies generated." << endl;
-            ofstream outfile(int_filename.getValue());
+            if (n_verbose_lvl > calc_saxs<float>::QUIET)
+                cout << calc.v_bodies_.size() << " bodies generated." << endl;
+
+            ofstream outfile(out_filename.getValue());
             for (unsigned int i = 0; i < calc.v_q_.size(); ++i)
             {
                 outfile << fixed << calc.v_q_[i] << "     \t" << calc.v_Iq_[i] << endl;
@@ -147,23 +187,22 @@ int main(int argc, char ** argv)
         }
         else
         {
-            calc_saxs<float> calc(pdb_filenames.getValue()[0], getexepath(), true, q_min.getValue(), q_max.getValue(), q_n.getValue(),
-                water_weight.getValue(),
-                calc_saxs<float>::verbose_levels(n_verbose_lvl));
+            calc_saxs<float>::profile_params params{ make_param<float>(scale, fit_filename),
+                make_param<float>(water_weight, fit_filename), saxs_profile<float>::read_from_file(fit_filename.getValue()) };
+            calc_saxs<float> calc(pdb_filenames.getValue(), getexepath(), true, q_min.getValue(), q_max.getValue(), q_n.getValue(),
+                params, calc_saxs<float>::verbose_levels(n_verbose_lvl));
             if (device == "host")
                 calc.host_saxs();
-            else if (ensemble_arg.getValue())
-                calc.cl_saxs_ensemble(algorithm::saxs_enum::saxs_gpu_pt_wf, device, 64);
             else
-                calc.cl_saxs(algorithm::saxs_enum::saxs_gpu_pt_wf, device, 64);
+                calc.cl_saxs_ensemble(algorithm::saxs_enum::saxs_gpu_pt_wf, device, 64);
             //alg_test_data<float, cl_float4> init_data(42, 1888);
             //recalc_test<float, cl_float4> tester(init_data, 64);
             //tester.run(algorithm, device, n_steps);
 
-            if (n_verbose_lvl > 0)
+            if (n_verbose_lvl > calc_saxs<float>::QUIET)
                 cout << calc.v_bodies_.size() << " bodies generated." << endl;
 
-            ofstream outfile(int_filename.getValue());
+            ofstream outfile(out_filename.getValue());
             for (unsigned int i = 0; i < calc.v_q_.size(); ++i)
             {
                 outfile << fixed << calc.v_q_[i] << "     \t" << calc.v_Iq_[i] << endl;
