@@ -69,7 +69,9 @@ namespace resaxs
         };
 
         calc_saxs(const std::vector<std::string> & bodies_filenames, const std::string & exe_base_path, bool atomic, FLT_T q_min, FLT_T q_max, unsigned int q_n,
-            profile_params params, verbose_levels verbose_lvl);
+            const profile_params & params, verbose_levels verbose_lvl);
+        calc_saxs(const std::vector<std::string> & bodies_filenames, const std::string & exe_base_path, bool atomic, FLT_T q_min, FLT_T q_max, unsigned int q_n,
+            profile_params && params, verbose_levels verbose_lvl);
         calc_saxs(const calc_saxs & other);
         void set_verbose_level(verbose_levels verbose_lvl = NORMAL) { verbose_lvl_ = verbose_lvl; }
 

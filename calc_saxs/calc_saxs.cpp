@@ -42,8 +42,14 @@ namespace resaxs
 
 template <typename FLT_T>
 calc_saxs<FLT_T>::calc_saxs(const vector<string> & bodies_filenames, const string & exe_base_path, bool atomic, FLT_T q_min, FLT_T q_max, unsigned int q_n,
-    profile_params params, verbose_levels verbose_lvl) :
-    params_(params), verbose_lvl_(verbose_lvl)
+    const profile_params & params, verbose_levels verbose_lvl) :
+    calc_saxs(bodies_filenames, exe_base_path, atomic, q_min, q_max, q_n, move(profile_params(params)), verbose_lvl)
+{}
+
+template <typename FLT_T>
+calc_saxs<FLT_T>::calc_saxs(const vector<string> & bodies_filenames, const string & exe_base_path, bool atomic, FLT_T q_min, FLT_T q_max, unsigned int q_n,
+    profile_params && params, verbose_levels verbose_lvl) :
+    params_(move(params)), verbose_lvl_(verbose_lvl)
 {
     // get the q-values from the ref profile if possible
     if (params_.ref_profile)

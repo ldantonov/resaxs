@@ -20,6 +20,7 @@
 ///////////////////////////////////////////////////////////////////////////////
 
 #include <vector>
+#include <algorithm>
 #include <random>
 
 #define SAXS_PROFILE_FILE_NOT_FOUND     -1101
@@ -30,6 +31,24 @@ template <typename FLT_T>
 class saxs_profile
 {
 public:
+    saxs_profile() = default;                       // an empty profile is valid
+    saxs_profile(saxs_profile &&) = default;        // all of the data is movable
+    saxs_profile(const saxs_profile &) = default;   // force default copy constructor, since custom move constructor disables it
+
+    /// use move semantics to initialize from temp buffers
+    saxs_profile(std::vector<FLT_T> && v_q, std::vector<FLT_T> && v_Iq, std::vector<FLT_T> && v_error) :
+        v_q_(std::move(v_q)), v_Iq_(std::move(v_Iq)), v_error_(std::move(v_error))
+    {
+        // if some errors were missing, generate all
+        if (v_error_.size() < v_q_.size())
+            generate_errors();
+
+        // generate squared precision as 1 / error^2
+        v_precision2_.resize(v_error_.size());
+        std::transform(v_error_.begin(), v_error_.end(), v_precision2_.begin(),
+            [](FLT_T e) -> FLT_T { return 1 / (e * e); });
+    }
+
     bool initialized() const
     {
         return v_q_.size() > 0;
@@ -46,14 +65,15 @@ public:
 
     /// read a SAXS profile from a text file. Expected format is 3 columns: q, I(q) and sigma(q).
     /// Comment lines start with #. 
-    static saxs_profile read_from_file(std::string filename)
+    static saxs_profile read_from_file(const std::string & filename)
     {
-        saxs_profile profile;
-        if (filename.empty())
-            return profile;
-
         std::ifstream profile_file(filename.c_str());
-        verify(!profile_file, SAXS_PROFILE_FILE_NOT_FOUND, filename + " file not found");
+        verify(bool(profile_file), SAXS_PROFILE_FILE_NOT_FOUND, filename + " file not found");
+
+        // temp buffers
+        std::vector<FLT_T> v_q;
+        std::vector<FLT_T> v_Iq;
+        std::vector<FLT_T> v_error;
 
         std::string line;
         while (!profile_file.eof())
@@ -70,25 +90,41 @@ public:
             // skip misformed lines
             if (!line_s)
                 continue;
-            profile.v_q_.push_back(q_elem);
-            profile.v_Iq_.push_back(iq_elem);
+            v_q.push_back(q_elem);
+            v_Iq.push_back(iq_elem);
 
             // try to read the error
             line_s >> error_elem;
             if (line_s)
             {
-                profile.v_error_.push_back(error_elem);
+                v_error.push_back(error_elem);
             }
         }
 
-        // if some errors were missing, generate all
-        if (profile.v_error_.size() < profile.v_Iq_.size())
-            profile.generate_errors();
+        return saxs_profile(std::move(v_q), std::move(v_Iq), std::move(v_error));
+    }
 
-        return profile;
+    /// Find the scale that optimizes the fit between this profile and another, using 
+    /// linear least squares.
+    /// \param[in] ref_Iq An intensity profile vector for the same scattering angles as our profile.
+    FLT_T optimize_scale(const std::vector<FLT_T> &ref_Iq) const
+    {
+        // argmin(c) sum((a - cb)^2) = sum(ab) / sum(b^2)
+        //   a = I(q)/e, b = ref_I(q)/e
+        FLT_T num = 0;
+        FLT_T denom = 0;
+        for (auto i = 0; i < v_Iq.size(); ++i)
+        {
+            num += v_Iq_[i] * ref_Iq[i] * v_precision2_[i];
+            denom += ref_Iq[i] * ref_Iq[i] * v_precision2_[i];
+        }
+        return num / denom;
     }
 
 private:
+    std::vector<FLT_T> v_precision2_;       // precision^2 = 1 / error^2
+
+    /// Generate simulated errors based on the intensities and a Poisson distribution.
     void generate_errors()
     {
         v_error_.resize(v_q_.size());
@@ -98,9 +134,9 @@ private:
 
         for (unsigned int i = 0; i < v_q_.size(); ++i)
         {
-            // Error is 3% , scaled by Poisson factors and 5 * q
+            // Error is 15%, scaled by Poisson factors and q
             auto rnd = std::abs(poisson(generator) / 10.0 - 1.0) + 1.0;
-            v_error_[i] = FLT_T(0.03 * v_Iq_[i] * 5.0 * (v_q_[i] + 0.001) * rnd);
+            v_error_[i] = FLT_T(0.15 * v_Iq_[i] * (v_q_[i] + 0.001) * rnd);
         }
     }
 };

@@ -172,7 +172,7 @@ int main(int argc, char ** argv)
             calc_saxs<double>::profile_params params{ make_param<double>(scale, fit_filename), 
                 make_param<double>(water_weight, fit_filename) };
             calc_saxs<double> calc(pdb_filenames.getValue(), getexepath(), true, q_min.getValue(), q_max.getValue(), q_n.getValue(),
-                params, calc_saxs<double>::verbose_levels(n_verbose_lvl));
+                move(params), calc_saxs<double>::verbose_levels(n_verbose_lvl));
             if (device == "host")
                 calc.host_saxs();
 
@@ -190,7 +190,7 @@ int main(int argc, char ** argv)
             calc_saxs<float>::profile_params params{ make_param<float>(scale, fit_filename),
                 make_param<float>(water_weight, fit_filename), saxs_profile<float>::read_from_file(fit_filename.getValue()) };
             calc_saxs<float> calc(pdb_filenames.getValue(), getexepath(), true, q_min.getValue(), q_max.getValue(), q_n.getValue(),
-                params, calc_saxs<float>::verbose_levels(n_verbose_lvl));
+                move(params), calc_saxs<float>::verbose_levels(n_verbose_lvl));
             if (device == "host")
                 calc.host_saxs();
             else
