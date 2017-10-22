@@ -43,7 +43,7 @@ namespace resaxs
 template <typename FLT_T>
 calc_saxs<FLT_T>::calc_saxs(const vector<string> & bodies_filenames, const string & exe_base_path, bool atomic, FLT_T q_min, FLT_T q_max, unsigned int q_n,
     const profile_params & params, verbose_levels verbose_lvl) :
-    calc_saxs(bodies_filenames, exe_base_path, atomic, q_min, q_max, q_n, move(profile_params(params)), verbose_lvl)
+    calc_saxs(bodies_filenames, exe_base_path, atomic, q_min, q_max, q_n, profile_params(params), verbose_lvl)
 {}
 
 template <typename FLT_T>
@@ -62,6 +62,7 @@ calc_saxs<FLT_T>::calc_saxs(const vector<string> & bodies_filenames, const strin
         for (unsigned int i = 0; i < q_n; ++i)
             v_q_[i] = q_min + i * step;
     }
+    v_Iq_.resize(v_q_.size());
 
     try
     {
@@ -80,7 +81,6 @@ calc_saxs<FLT_T>::calc_saxs(const vector<string> & bodies_filenames, const strin
     }
 
     n_factors_ = (unsigned int)(t_factors_.size() / v_q_.size());
-    v_Iq_.resize(v_q_.size());
 
     if (atomic)
         load_pdb_atomic(bodies_filenames);
@@ -89,13 +89,6 @@ calc_saxs<FLT_T>::calc_saxs(const vector<string> & bodies_filenames, const strin
         load_pdb(bodies_filenames[0]);
         v_models_.push_back(v_bodies_);
     }
-}
-
-template <typename FLT_T>
-calc_saxs<FLT_T>::calc_saxs(const calc_saxs & other) :
-    v_models_(v_models_), v_bodies_(other.v_bodies_), v_q_(other.v_q_), n_factors_(other.n_factors_), t_factors_(other.t_factors_), v_Iq_(other.v_Iq_),
-    params_(other.params_),verbose_lvl_(other.verbose_lvl_)
-{
 }
 
 template <typename FLT_T>
@@ -399,23 +392,29 @@ void calc_saxs<FLT_T>::load_pdb(const string & filename)
     }
 }
 
+/// Load atomic models from a PDB file.
 template <typename FLT_T>
-auto calc_saxs<FLT_T>::load_pdb_atomic(const string & filename) const -> const std::vector<std::vector<real4>>
+decltype(auto) calc_saxs<FLT_T>::load_pdb_atomic(const string & filename) const
 {
     parse_pdb<FLT_T> parser(filename);
     parser.set_verbose_level(typename decltype(parser)::verbose_levels(verbose_lvl_));
     return parser.all_models_as_complex_atoms();
 }
 
+/// Load atomic model from a collection of PDB files.
 template <typename FLT_T>
 void calc_saxs<FLT_T>::load_pdb_atomic(const std::vector<std::string> & filenames)
 {
     v_models_.clear();
 
-    for (auto & filename : filenames)
+    for (const auto & filename : filenames)
     {
         const auto & models = load_pdb_atomic(filename);
-        v_models_.insert(v_models_.end(), models.begin(), models.end());
+        // append the models from this PDB with move semantics
+        for (auto & model : models)
+        {
+            v_models_.push_back(move(model));
+        }
     }
 
     v_bodies_ = v_models_[0];

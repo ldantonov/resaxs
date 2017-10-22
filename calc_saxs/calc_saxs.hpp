@@ -72,7 +72,7 @@ namespace resaxs
             const profile_params & params, verbose_levels verbose_lvl);
         calc_saxs(const std::vector<std::string> & bodies_filenames, const std::string & exe_base_path, bool atomic, FLT_T q_min, FLT_T q_max, unsigned int q_n,
             profile_params && params, verbose_levels verbose_lvl);
-        calc_saxs(const calc_saxs & other);
+        calc_saxs(const calc_saxs & other) = default;
         void set_verbose_level(verbose_levels verbose_lvl = NORMAL) { verbose_lvl_ = verbose_lvl; }
 
         void cl_saxs(algorithm::saxs_enum alg_pick, const std::string & dev_spec, unsigned int wf_size);
@@ -93,7 +93,7 @@ namespace resaxs
         void parse_bodies(const std::string & filename);
 #endif
         void load_pdb(const std::string & filename);
-        const std::vector<std::vector<real4>> load_pdb_atomic(const std::string & filename) const;
+        decltype(auto) load_pdb_atomic(const std::string & filename) const;
         void load_pdb_atomic(const std::vector<std::string> & filenames);
 
         profile_params params_;

@@ -49,9 +49,20 @@ public:
             [](FLT_T e) -> FLT_T { return 1 / (e * e); });
     }
 
+    void initialize(std::vector<FLT_T> && v_q)
+    {
+        v_q_ = std::move(v_q);
+        v_Iq_.resize(v_q_.size());
+    }
+
+    size_t size() const
+    {
+        return v_q_.size();
+    }
+
     bool initialized() const
     {
-        return v_q_.size() > 0;
+        return size() > 0;
     }
 
     explicit operator bool() const
@@ -104,19 +115,19 @@ public:
         return saxs_profile(std::move(v_q), std::move(v_Iq), std::move(v_error));
     }
 
-    /// Find the scale that optimizes the fit between this profile and another, using 
-    /// linear least squares.
-    /// \param[in] ref_Iq An intensity profile vector for the same scattering angles as our profile.
-    FLT_T optimize_scale(const std::vector<FLT_T> &ref_Iq) const
+    /// Find the scale factor for another profile that optimizes its fit with this one,
+    /// using linear least squares.
+    /// \param[in] other_Iq An intensity profile vector for the same scattering angles as our profile.
+    FLT_T optimize_scale_for(const std::vector<FLT_T> &other_Iq) const
     {
         // argmin(c) sum((a - cb)^2) = sum(ab) / sum(b^2)
-        //   a = I(q)/e, b = ref_I(q)/e
+        //   a = I(q)/e, b = other_I(q)/e
         FLT_T num = 0;
         FLT_T denom = 0;
         for (auto i = 0; i < v_Iq.size(); ++i)
         {
-            num += v_Iq_[i] * ref_Iq[i] * v_precision2_[i];
-            denom += ref_Iq[i] * ref_Iq[i] * v_precision2_[i];
+            num += v_Iq_[i] * other_Iq[i] * v_precision2_[i];
+            denom += other_Iq[i] * other_Iq[i] * v_precision2_[i];
         }
         return num / denom;
     }
@@ -127,7 +138,7 @@ private:
     /// Generate simulated errors based on the intensities and a Poisson distribution.
     void generate_errors()
     {
-        v_error_.resize(v_q_.size());
+        v_error_.resize(size());
 
         std::default_random_engine generator;
         std::poisson_distribution<int> poisson(10.0);
