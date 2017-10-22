@@ -54,6 +54,7 @@ namespace resaxs
             profile_param(const profile_param&) = default;
 
             operator const FLT_T () const { return value_; }
+            bool fit() const { return fit_; }
 
         private:
             bool fit_;
@@ -65,7 +66,7 @@ namespace resaxs
         public:
             profile_param scale_;           // scale of the profile relative to the reference
             profile_param water_weight_;    // weight parameter for the water layer
-            saxs_profile<FLT_T> ref_profile;       // reference (e.g. experimental) profile
+            saxs_profile<FLT_T> ref_profile_;       // reference (e.g. experimental) profile
         };
 
         calc_saxs(const std::vector<std::string> & bodies_filenames, const std::string & exe_base_path, bool atomic, FLT_T q_min, FLT_T q_max, unsigned int q_n,

@@ -52,8 +52,8 @@ calc_saxs<FLT_T>::calc_saxs(const vector<string> & bodies_filenames, const strin
     params_(move(params)), verbose_lvl_(verbose_lvl)
 {
     // get the q-values from the ref profile if possible
-    if (params_.ref_profile)
-        v_q_ = params_.ref_profile.v_q_;
+    if (params_.ref_profile_)
+        v_q_ = params_.ref_profile_.v_q_;
     else
     {
         // generate the q-values
@@ -192,27 +192,27 @@ void calc_saxs<FLT_T>::cl_saxs_ensemble(algorithm::saxs_enum alg_pick, const str
 {
     if (verbose_lvl_ >= NORMAL)
         cout << "Calculating ensemble average for " << v_models_.size() << " conformations.\n";
+
     vector<FLT_T> Iq;
-    for_each(v_models_.begin(), v_models_.end(),
-        [this, &Iq, alg_pick, dev_spec, wf_size](vector<real4> &bodies)
+    for (const auto & bodies: v_models_)
     {
         v_bodies_ = bodies;
         cl_saxs(alg_pick, dev_spec, wf_size);
         if (Iq.size() > 0)
         {
             for (auto i = 0U; i < Iq.size(); ++i)
-            {
                 Iq[i] += v_Iq_[i];
-            }
         }
         else
             Iq = v_Iq_;
-    });
-    for (auto i = 0U; i < Iq.size(); ++i)
-    {
-        v_Iq_[i] = Iq[i] / v_models_.size();
     }
+    for (auto i = 0U; i < Iq.size(); ++i)
+        v_Iq_[i] = Iq[i] / v_models_.size();
 
+    // fit the scale parameter, if needed, and scale the intensity
+    auto scale = params_.scale_.fit() ? params_.ref_profile_.optimize_scale_for(v_Iq_) : params_.scale_;
+    for (auto & iq : v_Iq_)
+        iq *= scale;
 }
 
 template <typename FLT_T>

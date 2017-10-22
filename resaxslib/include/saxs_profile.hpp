@@ -124,7 +124,7 @@ public:
         //   a = I(q)/e, b = other_I(q)/e
         FLT_T num = 0;
         FLT_T denom = 0;
-        for (auto i = 0; i < v_Iq.size(); ++i)
+        for (auto i = 0; i < v_Iq_.size(); ++i)
         {
             num += v_Iq_[i] * other_Iq[i] * v_precision2_[i];
             denom += other_Iq[i] * other_Iq[i] * v_precision2_[i];
