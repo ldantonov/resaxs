@@ -34,6 +34,7 @@ public:
     saxs_profile() = default;                       // an empty profile is valid
     saxs_profile(saxs_profile &&) = default;        // all of the data is movable
     saxs_profile(const saxs_profile &) = default;   // force default copy constructor, since custom move constructor disables it
+    saxs_profile & operator=(const saxs_profile &) = default; // force default assignment, since custom move constructor disables it
 
     /// use move semantics to initialize from temp buffers
     saxs_profile(std::vector<FLT_T> && v_q, std::vector<FLT_T> && v_Iq, std::vector<FLT_T> && v_error) :
@@ -53,6 +54,12 @@ public:
     {
         v_q_ = std::move(v_q);
         v_Iq_.resize(v_q_.size());
+    }
+
+    void initialize(const std::vector<FLT_T> & v_q)
+    {
+        // use a temporary to invoke move version
+        initialize(std::vector<FLT_T>(v_q));
     }
 
     size_t size() const

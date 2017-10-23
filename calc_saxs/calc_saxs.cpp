@@ -33,7 +33,6 @@
 #include "parse_pdb.hpp"
 #include "sasa_atomic.hpp"
 #include "re_cl_algorithm_base.hpp"
-#include "saxs_algorithm.hpp"
 
 using namespace std;
 
@@ -42,13 +41,13 @@ namespace resaxs
 
 template <typename FLT_T>
 calc_saxs<FLT_T>::calc_saxs(const vector<string> & bodies_filenames, const string & exe_base_path, bool atomic, FLT_T q_min, FLT_T q_max, unsigned int q_n,
-    const profile_params & params, verbose_levels verbose_lvl) :
-    calc_saxs(bodies_filenames, exe_base_path, atomic, q_min, q_max, q_n, profile_params(params), verbose_lvl)
+    const profile_params<FLT_T> & params, verbose_levels verbose_lvl) :
+    calc_saxs(bodies_filenames, exe_base_path, atomic, q_min, q_max, q_n, profile_params<FLT_T>(params), verbose_lvl)
 {}
 
 template <typename FLT_T>
 calc_saxs<FLT_T>::calc_saxs(const vector<string> & bodies_filenames, const string & exe_base_path, bool atomic, FLT_T q_min, FLT_T q_max, unsigned int q_n,
-    profile_params && params, verbose_levels verbose_lvl) :
+    profile_params<FLT_T> && params, verbose_levels verbose_lvl) :
     params_(move(params)), verbose_lvl_(verbose_lvl)
 {
     // get the q-values from the ref profile if possible
@@ -96,123 +95,6 @@ void calc_saxs<FLT_T>::host_saxs()
 {
     atomic_form_factors<FLT_T>::generate(v_q_, t_factors_);
     host_debye<double, FLT_T, real4>::calc_curve(v_q_, v_bodies_, t_factors_, v_Iq_);
-}
-
-#include "time.h"
-
-template <typename FLT_T>
-void calc_saxs<FLT_T>::cl_saxs(algorithm::saxs_enum alg_pick, const string & dev_spec, unsigned int wf_size)
-{
-    vector<dev_id> devices;
-    parse_dev_spec(dev_spec, devices);
-
-    using alg_base = algorithm::cl_base<FLT_T>;
-    using saxs_class = algorithm::i_saxs<FLT_T, alg_base>;
-
-    clock_t t1 = clock();
-    unique_ptr<saxs_class> saxs_alg(algorithm::create_saxs_ocl<FLT_T>());
-    auto & saxs_params = saxs_alg->access_params();
-    saxs_params.initialize(v_q_, v_bodies_, devices, wf_size);
-
-    auto & water_params = saxs_params.get_implicit_water_params();
-    water_params.set_water_weight(params_.water_weight_);
-    if (verbose_lvl_ >= DETAILS)
-        cout << "Water layer contrast: " << fixed << params_.water_weight_ << endl;
-    //saxs_params.get_ff_params().set_expansion_factor(1.04f);
-    saxs_alg->initialize();
-
-    saxs_alg->calc_curve(v_bodies_, v_Iq_);
-    cout << endl << "SAXS calc time: " << double(clock() - t1) * 1000 / CLOCKS_PER_SEC << "ms" << endl << endl;
-
-    t1 = clock();
-    constexpr int recalc_it = 0;
-    for (int i = 0; i < recalc_it; ++i)
-    {
-        //saxs_params.get_ff_params().set_expansion_factor(1);
-        saxs_alg->recalc_curve(v_bodies_, 0, (unsigned int)v_bodies_.size(), v_Iq_);
-    }
-    t1 = clock() - t1;
-    if (recalc_it > 0)
-        cout << endl << "SAXS step time: " << double(t1) * 1000 / CLOCKS_PER_SEC / recalc_it << "ms/iteration" << endl << endl;
-#if 0
-    auto & rsasa = water_params.access_rsasa();
-
-    ofstream log("rsasa.log");
-    for_each(rsasa.begin(), rsasa.end(), [&log](FLT_T x){log << x << endl; });
-#endif
-
-    // TEMP BELOW
-#if 0
-    return;
-    ofstream outfile("sp1.int");
-    for (unsigned int i = 0; i < v_q_.size(); ++i)
-    {
-        outfile << fixed << v_q_[i] << "     \t" << v_Iq_[i] << endl;
-    }
-
-    for (int i = 1; i < 10; i++)
-    {
-        string num = string() + char('1' + i);
-        if (i == 9)
-            num = "10";
-        string name = string("sample") + num + ".pdb";
-        cout << name << endl;
-
-        auto bodies = v_bodies_;
-        load_pdb_atomic(name);
-
-        int first_diff = -1, last_diff = -1;
-        for (size_t j = 0; j < bodies.size(); j++)
-        {
-            if (memcmp(&bodies[j], &v_bodies_[j], sizeof(bodies[j])) != 0)
-            {
-                if (first_diff < 0)
-                    first_diff = (int)j;
-                last_diff = (int)j;
-            }
-        }
-        cout << "Diff: " << first_diff << '-' << last_diff << endl;
-
-        if (first_diff >= 0)
-        {
-            saxs_alg->recalc_curve(v_bodies_, first_diff, (unsigned int)(last_diff - first_diff + 1), v_Iq_);
-        }
-
-        ofstream outfile(string("sp") + num + ".int");
-        for (unsigned int i = 0; i < v_q_.size(); ++i)
-        {
-            outfile << fixed << v_q_[i] << "     \t" << v_Iq_[i] << endl;
-        }
-    }
-#endif
-}
-
-template <typename FLT_T>
-void calc_saxs<FLT_T>::cl_saxs_ensemble(algorithm::saxs_enum alg_pick, const string & dev_spec, unsigned int wf_size)
-{
-    if (verbose_lvl_ >= NORMAL)
-        cout << "Calculating ensemble average for " << v_models_.size() << " conformations.\n";
-
-    vector<FLT_T> Iq;
-    for (const auto & bodies: v_models_)
-    {
-        v_bodies_ = bodies;
-        cl_saxs(alg_pick, dev_spec, wf_size);
-        if (Iq.size() > 0)
-        {
-            for (auto i = 0U; i < Iq.size(); ++i)
-                Iq[i] += v_Iq_[i];
-        }
-        else
-            Iq = v_Iq_;
-    }
-    for (auto i = 0U; i < Iq.size(); ++i)
-        v_Iq_[i] = Iq[i] / v_models_.size();
-
-    // fit the scale parameter, if needed, and scale the intensity
-    auto scale = params_.scale_.fit() ? params_.ref_profile_.optimize_scale_for(v_Iq_) : params_.scale_;
-    for (auto & iq : v_Iq_)
-        iq *= scale;
 }
 
 template <typename FLT_T>

@@ -23,6 +23,7 @@
 #include <memory>
 #include <string>
 #include <sstream>
+#include <ctime>
 
 #include "utils.hpp"
 #include <tclap/CmdLine.h>
@@ -93,7 +94,7 @@ public:
 ///     arg             - command line argument
 ///     fit_filename    - command line argument for the intensity file to use for fitting
 template <typename FLT_T>
-typename calc_saxs<FLT_T>::profile_param make_param(const TCLAP::ValueArg<float> & arg, const TCLAP::ValueArg<string> & fit_filename)
+typename profile_param<FLT_T> make_param(const TCLAP::ValueArg<float> & arg, const TCLAP::ValueArg<string> & fit_filename)
 {
     return { const_cast<TCLAP::ValueArg<float> &>(arg).getValue(), !arg.isSet() && !const_cast<TCLAP::ValueArg<string> &>(fit_filename).getValue().empty() };
 };
@@ -169,7 +170,7 @@ int main(int argc, char ** argv)
 
         if (dp)
         {
-            calc_saxs<double>::profile_params params{ make_param<double>(scale, fit_filename), 
+            profile_params<double> params{ make_param<double>(scale, fit_filename), 
                 make_param<double>(water_weight, fit_filename) };
             calc_saxs<double> calc(pdb_filenames.getValue(), getexepath(), true, q_min.getValue(), q_max.getValue(), q_n.getValue(),
                 move(params), calc_saxs<double>::verbose_levels(n_verbose_lvl));
@@ -187,20 +188,24 @@ int main(int argc, char ** argv)
         }
         else
         {
-            calc_saxs<float>::profile_params params{ make_param<float>(scale, fit_filename),
+            clock_t t1 = clock();
+
+            profile_params<float> params{ make_param<float>(scale, fit_filename),
                 make_param<float>(water_weight, fit_filename), saxs_profile<float>::read_from_file(fit_filename.getValue()) };
             calc_saxs<float> calc(pdb_filenames.getValue(), getexepath(), true, q_min.getValue(), q_max.getValue(), q_n.getValue(),
                 move(params), calc_saxs<float>::verbose_levels(n_verbose_lvl));
-            if (device == "host")
-                calc.host_saxs();
-            else
-                calc.cl_saxs_ensemble(algorithm::saxs_enum::saxs_gpu_pt_wf, device, 64);
-            //alg_test_data<float, cl_float4> init_data(42, 1888);
-            //recalc_test<float, cl_float4> tester(init_data, 64);
-            //tester.run(algorithm, device, n_steps);
 
             if (n_verbose_lvl > calc_saxs<float>::QUIET)
                 cout << calc.v_bodies_.size() << " bodies generated." << endl;
+
+            if (device == "host")
+                calc.host_saxs();
+            else
+            {
+                calc.avg_ensemble(calc_cl_saxs<float>(algorithm::saxs_enum::saxs_gpu_pt_wf, device, 64));
+            }
+            
+            cout << endl << "SAXS calc time: " << double(clock() - t1) * 1000 / CLOCKS_PER_SEC << "ms" << endl << endl;
 
             ofstream outfile(out_filename.getValue());
             for (unsigned int i = 0; i < calc.v_q_.size(); ++i)
