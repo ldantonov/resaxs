@@ -35,17 +35,21 @@ public:
     saxs_profile(saxs_profile &&) = default;        // all of the data is movable
     saxs_profile(const saxs_profile &) = default;   // force default copy constructor, since custom move constructor disables it
     saxs_profile & operator=(const saxs_profile &) = default; // force default assignment, since custom move constructor disables it
+    saxs_profile & operator=(saxs_profile &&) = default; // force default moveassignment, since custom move constructor disables it
 
     /// use move semantics to initialize from temp buffers
+    ///
     saxs_profile(std::vector<FLT_T> && v_q, std::vector<FLT_T> && v_Iq, std::vector<FLT_T> && v_error) :
         v_q_(std::move(v_q)), v_Iq_(std::move(v_Iq)), v_error_(std::move(v_error))
     {
+        assert(v_Iq_.size() == size());
+
         // if some errors were missing, generate all
-        if (v_error_.size() < v_q_.size())
+        if (v_error_.size() < size())
             generate_errors();
 
         // generate squared precision as 1 / error^2
-        v_precision2_.resize(v_error_.size());
+        v_precision2_.resize(size());
         std::transform(v_error_.begin(), v_error_.end(), v_precision2_.begin(),
             [](FLT_T e) -> FLT_T { return 1 / (e * e); });
     }
@@ -127,16 +131,33 @@ public:
     /// \param[in] other_Iq An intensity profile vector for the same scattering angles as our profile.
     FLT_T optimize_scale_for(const std::vector<FLT_T> &other_Iq) const
     {
+        assert(other_Iq.size() == size());
+        assert(v_Iq_.size() == size());
+        
         // argmin(c) sum((a - cb)^2) = sum(ab) / sum(b^2)
         //   a = I(q)/e, b = other_I(q)/e
         FLT_T num = 0;
         FLT_T denom = 0;
-        for (auto i = 0; i < v_Iq_.size(); ++i)
+        for (auto i = 0; i < size(); ++i)
         {
             num += v_Iq_[i] * other_Iq[i] * v_precision2_[i];
             denom += other_Iq[i] * other_Iq[i] * v_precision2_[i];
         }
         return num / denom;
+    }
+
+    FLT_T chi_square(const std::vector<FLT_T> &other_Iq) const
+    {
+        assert(other_Iq.size() == size());
+        assert(v_Iq_.size() == size());
+
+        FLT_T chi2 = 0;
+        for (auto i = 0; i < size(); ++i)
+        {
+            FLT_T diff = v_Iq_[i] - other_Iq[i];
+            chi2 += diff * diff * v_precision2_[i];
+        }
+        return chi2 / size();
     }
 
 private:
@@ -150,7 +171,7 @@ private:
         std::default_random_engine generator;
         std::poisson_distribution<int> poisson(10.0);
 
-        for (unsigned int i = 0; i < v_q_.size(); ++i)
+        for (unsigned int i = 0; i < size(); ++i)
         {
             // Error is 15%, scaled by Poisson factors and q
             auto rnd = std::abs(poisson(generator) / 10.0 - 1.0) + 1.0;

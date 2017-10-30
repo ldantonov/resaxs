@@ -130,6 +130,11 @@ namespace resaxs {
         typedef cl_float3 cl_real3;
     };
 
+    inline bool operator==(const cl_float4 & o1, const cl_float4 & o2)
+    {
+        return memcmp(&o1, &o2, sizeof(o1));
+    }
+
     template <>
     union real_type <double>
     {

@@ -154,12 +154,13 @@ namespace algorithm {
     void rsasa_cl_gpu<FLT_T, OUT_FLT_T>::calc_rsasa(const std::vector<real4> &atoms, std::vector<OUT_FLT_T> &rsasa)
     {
         verify(this->args_set(), error::SAXS_ARGS_NOT_SET);
+        verify(rsasa.size() >= atoms.size(), error::SAXS_INVALID_ARG);
 
         const auto &radii = get_radii(atoms);
         b_radii_.write_from(radii, this->queue_);
 
-        if (rsasa.size() < atoms.size())
-            rsasa.resize(atoms.size());
+        //if (rsasa.size() < atoms.size())
+        //    rsasa.resize(atoms.size());
         do_recalc_rsasa(atoms, rsasa);
 
         this->state = this->alg_computing;

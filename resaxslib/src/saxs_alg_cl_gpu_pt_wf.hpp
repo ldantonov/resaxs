@@ -91,7 +91,7 @@ namespace algorithm {
         struct gpu_pt_wf_params : public saxs_params<FLT_T>, private implicit_water_params<FLT_T>, private common_ocl_params
         {
         private:
-            using rsasa_alg_base = algorithm;
+            using rsasa_alg_base = cl_base<FLT_T>;//algorithm;
             
             saxs_cl_gpu & owner_;
             atomic_ff_params ff_params_;

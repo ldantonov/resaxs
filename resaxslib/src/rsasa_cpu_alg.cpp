@@ -113,9 +113,10 @@ namespace algorithm {
     void rsasa_cpu_alg<FLT_T, OUT_FLT_T>::calc_rsasa(const std::vector<real4> &atoms, std::vector<OUT_FLT_T> &rsasa)
     {
         verify(this->initialized(), error::SAXS_ALG_NOT_INITIALIZED);
+        verify(rsasa.size() >= atoms.size(), error::SAXS_INVALID_ARG);
 
         const size_t n_atoms = atoms.size();
-        rsasa.resize(n_atoms);
+        //rsasa.resize(n_atoms);
 
         const vector<FLT_T> &radii = get_radii(atoms);
 
@@ -147,7 +148,7 @@ namespace algorithm {
             neighbors1.clear();
             neighbors2.clear();
             const auto &end_it = grid.end(ui);  // let's not create this more than once
-            for (auto it = grid.begin(li, ui); it != end_it; ++it)
+            for (auto & it = grid.begin(li, ui); it != end_it; ++it)
             {
                 for (const auto pt_idx : *it)
                 {

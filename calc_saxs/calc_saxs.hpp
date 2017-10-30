@@ -40,7 +40,7 @@ namespace resaxs
     {
     public:
         profile_param(FLT_T value, bool fit = false) : value_(value), fit_(fit) {}
-        profile_param(const profile_param&) = default;
+        profile_param(const profile_param &) = default;
 
         operator const FLT_T () const { return value_; }
         bool fit() const { return fit_; }
@@ -98,7 +98,10 @@ namespace resaxs
             if (saxs_alg_->computing())
             {
                 set_params();
-                saxs_alg_->recalc_curve(bodies, 0, (unsigned int)bodies.size(), v_Iq);
+                bool pos_changed = memcmp(bodies.data(), prev_bodies.data(), bodies.size() * sizeof(real4)) != 0;
+                saxs_alg_->recalc_curve(bodies, 0, pos_changed ? (unsigned int)bodies.size() : 0, v_Iq);
+                if (pos_changed)
+                    prev_bodies = bodies;
             }
             else
             {
@@ -107,6 +110,7 @@ namespace resaxs
                 else
                     reinit(bodies);
                 saxs_alg_->calc_curve(bodies, v_Iq);
+                prev_bodies = bodies;
             }
         }
 
@@ -114,6 +118,7 @@ namespace resaxs
         std::vector<dev_id> devices_;
         unsigned int wf_size_;
         std::unique_ptr<saxs_class> saxs_alg_;
+        std::vector<real4> prev_bodies;
 
     private:
         void set_params()
@@ -146,20 +151,56 @@ namespace resaxs
         void set_verbose_level(verbose_levels verbose_lvl = NORMAL) { verbose_lvl_ = verbose_lvl; }
 
         template <typename CALC_T>
-        void avg_ensemble(CALC_T & calc)
+        profile_params<FLT_T> fit_ensemble(CALC_T & eval)
         {
             if (verbose_lvl_ >= NORMAL)
                 cout << "Calculating ensemble average for " << v_models_.size() << " conformations.\n";
 
-            calc.params_.scale_.fix(params_.scale_);
-            calc.params_.water_weight_.fix(params_.water_weight_);
-            calc.params_.ref_profile_.initialize(v_q_);
+            eval.params_.ref_profile_.initialize(v_q_);
 
+            profile_params<FLT_T> best_params{ params_.scale_, params_.water_weight_ };
+            FLT_T low_chi2 = std::numeric_limits<FLT_T>::max();
+
+            FLT_T c2 = params_.water_weight_.fit() ? FLT_T(-2.0) : params_.water_weight_;
+            FLT_T max_c2 = params_.water_weight_.fit() ? FLT_T(4.0) : params_.water_weight_;
+            do
+            {
+                eval.params_.scale_ = params_.scale_;   // reset scale param
+                eval.params_.water_weight_.fix(c2);
+
+                avg_ensemble(eval);
+
+                FLT_T chi2 = params_.ref_profile_.chi_square(v_Iq_);
+                if (chi2 < low_chi2)
+                {
+                    low_chi2 = chi2;
+                    best_params.scale_ = eval.params_.scale_;
+                    best_params.water_weight_ = c2;
+                }
+                c2 += FLT_T(0.1);
+            } while (c2 <= max_c2);
+
+            if (c2 > best_params.water_weight_ + FLT_T(0.1))
+            {
+                eval.params_.scale_.fix(best_params.scale_);
+                eval.params_.water_weight_.fix(best_params.water_weight_);
+
+                avg_ensemble(eval);
+            }
+            return best_params;
+        }
+
+        /// compute the ensemble average using the supplied evaluator and current parameters.
+        ///
+        template <typename CALC_T>
+        void avg_ensemble(CALC_T & eval)
+        {
+            // average the intensity for all models
             v_Iq_.assign(v_Iq_.size(), FLT_T(0));
             vector<FLT_T> Iq(v_Iq_.size());
             for (const auto & bodies : v_models_)
             {
-                calc.calc(bodies, Iq);
+                eval.calc(bodies, Iq);
                 for (auto i = 0U; i < Iq.size(); ++i)
                     v_Iq_[i] += Iq[i];
             }
@@ -167,9 +208,10 @@ namespace resaxs
                 iq /= v_models_.size();
 
             // fit the scale parameter, if needed, and scale the intensity
-            auto scale = params_.scale_.fit() ? params_.ref_profile_.optimize_scale_for(v_Iq_) : params_.scale_;
+            if (params_.scale_.fit())
+                eval.params_.scale_.fix(params_.ref_profile_.optimize_scale_for(v_Iq_));
             for (auto & iq : v_Iq_)
-                iq *= scale;
+                iq *= eval.params_.scale_;
         }
 
         void host_saxs();
@@ -182,6 +224,7 @@ namespace resaxs
         unsigned int n_factors_;
         std::vector<FLT_T> t_factors_;
         std::vector<FLT_T> v_Iq_;
+        //FLT_T scale_ = 1;
 
     private:
 #if 0

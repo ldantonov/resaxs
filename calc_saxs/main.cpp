@@ -76,7 +76,7 @@ class water_weight_range : public TCLAP::Constraint<float>
 public:
     virtual std::string description() const override
     {
-        return "[0, 4.0]";
+        return "[-2.0, 4.0]";
     }
 
     virtual std::string shortID() const override
@@ -86,7 +86,7 @@ public:
 
     virtual bool check(const float& value) const override
     {
-        return value >= 0 && value <= 4.0;
+        return value >= -2.0 && value <= 4.0;
     }
 };
 
@@ -198,16 +198,22 @@ int main(int argc, char ** argv)
             if (n_verbose_lvl > calc_saxs<float>::QUIET)
                 cout << calc.v_bodies_.size() << " bodies generated." << endl;
 
+            cout << endl << "Preprocessing time: " << double(clock() - t1) * 1000 / CLOCKS_PER_SEC << "ms" << endl << endl;
+            t1 = clock();
+
+            profile_params<float> best_params;
+
             if (device == "host")
                 calc.host_saxs();
             else
             {
-                calc.avg_ensemble(calc_cl_saxs<float>(algorithm::saxs_enum::saxs_gpu_pt_wf, device, 64));
+                best_params = calc.fit_ensemble(calc_cl_saxs<float>(algorithm::saxs_enum::saxs_gpu_pt_wf, device, 64));
             }
             
             cout << endl << "SAXS calc time: " << double(clock() - t1) * 1000 / CLOCKS_PER_SEC << "ms" << endl << endl;
 
             ofstream outfile(out_filename.getValue());
+            outfile << "# scale: " << best_params.scale_ << ", water weight: " << best_params.water_weight_ << endl;
             for (unsigned int i = 0; i < calc.v_q_.size(); ++i)
             {
                 outfile << fixed << calc.v_q_[i] << "     \t" << calc.v_Iq_[i] << endl;
