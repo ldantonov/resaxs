@@ -35,6 +35,35 @@
 namespace resaxs
 {
 
+    template <typename T, typename U,
+        typename = std::enable_if_t<std::is_arithmetic<T>::value>,
+        typename = std::enable_if_t<std::is_arithmetic<U>::value>>
+        inline std::vector<T> & operator*=(std::vector<T> & v, U c)
+    {
+        for (auto & e : v)
+            e *= c;
+        return v;
+    }
+
+    template <typename T, typename U,
+        typename = std::enable_if_t<std::is_arithmetic<T>::value>,
+        typename = std::enable_if_t<std::is_arithmetic<U>::value>>
+        inline std::vector<T> & operator/=(std::vector<T> & v, U c)
+    {
+        for (auto & e : v)
+            e /= c;
+        return v;
+    }
+
+    template <typename T, typename = std::enable_if_t<std::is_arithmetic<T>::value>>
+    inline std::vector<T> & operator+=(std::vector<T> & v1, const std::vector<T> & v2)
+    {
+        for (auto i = 0U; i < v1.size(); ++i)
+            v1[i] += v2[i];
+        return v1;
+    }
+
+
     template <typename FLT_T>
     struct profile_param
     {
@@ -53,12 +82,21 @@ namespace resaxs
     };
 
     template <typename FLT_T>
-    struct profile_params
+    struct calc_params
     {
     public:
         profile_param<FLT_T> scale_ = { 1, false };           // scale of the profile relative to the reference
         profile_param<FLT_T> water_weight_ = { 0, false };    // weight parameter for the water layer
         saxs_profile<FLT_T> ref_profile_;       // reference (e.g. experimental) profile
+    };
+
+    template <typename FLT_T>
+    struct fitted_params
+    {
+        FLT_T scale_ = 1;           // profile scaling factor
+        FLT_T water_weight_ = 0;    // weight parameter for the water layer
+        FLT_T chi2_ = std::numeric_limits<FLT_T>::max();
+        std::vector<FLT_T> intensity_;
     };
 
     template <typename FLT_T>
@@ -69,7 +107,7 @@ namespace resaxs
         using saxs_class = algorithm::i_saxs<FLT_T, alg_base>;
 
     public:
-        profile_params<FLT_T> params_;
+        calc_params<FLT_T> params_;
 
     public:
         calc_cl_saxs(algorithm::saxs_enum alg_pick, const std::string & dev_spec, unsigned int wf_size) :
@@ -144,22 +182,21 @@ namespace resaxs
         };
 
         calc_saxs(const std::vector<std::string> & bodies_filenames, const std::string & exe_base_path, bool atomic, FLT_T q_min, FLT_T q_max, unsigned int q_n,
-            const profile_params<FLT_T> & params, verbose_levels verbose_lvl);
+            const calc_params<FLT_T> & params, verbose_levels verbose_lvl);
         calc_saxs(const std::vector<std::string> & bodies_filenames, const std::string & exe_base_path, bool atomic, FLT_T q_min, FLT_T q_max, unsigned int q_n,
-            profile_params<FLT_T> && params, verbose_levels verbose_lvl);
+            calc_params<FLT_T> && params, verbose_levels verbose_lvl);
         calc_saxs(const calc_saxs & other) = default;
         void set_verbose_level(verbose_levels verbose_lvl = NORMAL) { verbose_lvl_ = verbose_lvl; }
 
         template <typename CALC_T>
-        profile_params<FLT_T> fit_ensemble(CALC_T & eval)
+        fitted_params<FLT_T> fit_ensemble(CALC_T & eval)
         {
             if (verbose_lvl_ >= NORMAL)
                 cout << "Calculating ensemble average for " << v_models_.size() << " conformations.\n";
 
             eval.params_.ref_profile_.initialize(v_q_);
 
-            profile_params<FLT_T> best_params{ params_.scale_, params_.water_weight_ };
-            FLT_T low_chi2 = std::numeric_limits<FLT_T>::max();
+            fitted_params<FLT_T> best_params;
 
             FLT_T c2 = params_.water_weight_.fit() ? FLT_T(-2.0) : params_.water_weight_;
             FLT_T max_c2 = params_.water_weight_.fit() ? FLT_T(4.0) : params_.water_weight_;
@@ -168,50 +205,42 @@ namespace resaxs
                 eval.params_.scale_ = params_.scale_;   // reset scale param
                 eval.params_.water_weight_.fix(c2);
 
-                avg_ensemble(eval);
+                auto iq = avg_ensemble(eval);
 
-                FLT_T chi2 = params_.ref_profile_.chi_square(v_Iq_);
-                if (chi2 < low_chi2)
+                // fit the scale parameter, if needed, and scale the intensity
+                FLT_T scale = params_.scale_.fit() ? params_.ref_profile_.optimize_scale_for(iq) : params_.scale_;
+                iq *= scale;
+
+                // check the fit
+                FLT_T chi2 = params_.ref_profile_.chi_square(iq);
+                if (chi2 < best_params.chi2_)
                 {
-                    low_chi2 = chi2;
-                    best_params.scale_ = eval.params_.scale_;
+                    best_params.chi2_ = chi2;
+                    best_params.scale_ = scale;
                     best_params.water_weight_ = c2;
+                    best_params.intensity_ = std::move(iq);
                 }
                 c2 += FLT_T(0.1);
             } while (c2 <= max_c2);
 
-            if (c2 > best_params.water_weight_ + FLT_T(0.1))
-            {
-                eval.params_.scale_.fix(best_params.scale_);
-                eval.params_.water_weight_.fix(best_params.water_weight_);
-
-                avg_ensemble(eval);
-            }
             return best_params;
         }
 
         /// compute the ensemble average using the supplied evaluator and current parameters.
         ///
         template <typename CALC_T>
-        void avg_ensemble(CALC_T & eval)
+        std::vector<FLT_T> avg_ensemble(CALC_T & eval) const
         {
             // average the intensity for all models
-            v_Iq_.assign(v_Iq_.size(), FLT_T(0));
-            vector<FLT_T> Iq(v_Iq_.size());
+            std::vector<FLT_T> avg_iq(v_q_.size());
+            std::vector<FLT_T> iq(avg_iq.size());
             for (const auto & bodies : v_models_)
             {
-                eval.calc(bodies, Iq);
-                for (auto i = 0U; i < Iq.size(); ++i)
-                    v_Iq_[i] += Iq[i];
+                eval.calc(bodies, iq);
+                avg_iq += iq;
             }
-            for (auto & iq : v_Iq_)
-                iq /= v_models_.size();
-
-            // fit the scale parameter, if needed, and scale the intensity
-            if (params_.scale_.fit())
-                eval.params_.scale_.fix(params_.ref_profile_.optimize_scale_for(v_Iq_));
-            for (auto & iq : v_Iq_)
-                iq *= eval.params_.scale_;
+            avg_iq /= v_models_.size();
+            return avg_iq;
         }
 
         void host_saxs();
@@ -223,8 +252,7 @@ namespace resaxs
         std::vector<FLT_T> v_q_;
         unsigned int n_factors_;
         std::vector<FLT_T> t_factors_;
-        std::vector<FLT_T> v_Iq_;
-        //FLT_T scale_ = 1;
+        std::vector<FLT_T> intensity_;
 
     private:
 #if 0
@@ -234,7 +262,7 @@ namespace resaxs
         decltype(auto) load_pdb_atomic(const std::string & filename) const;
         void load_pdb_atomic(const std::vector<std::string> & filenames);
 
-        profile_params<FLT_T> params_;
+        calc_params<FLT_T> params_;
         verbose_levels verbose_lvl_;
     };
 

@@ -50,7 +50,7 @@ protected:
     std::vector<FLT_T> v_q_;
     unsigned int n_factors_;
     std::vector<FLT_T> t_factors_;
-    std::vector<FLT_T> v_Iq_;
+    std::vector<FLT_T> intensity_;
 
     //virtual void set_args(saxs_algorithm<FLT_T, FLT4_T> & algorithm) {}
     virtual void move_bodies(int & index, int & length) {}

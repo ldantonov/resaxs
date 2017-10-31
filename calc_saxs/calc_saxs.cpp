@@ -41,13 +41,13 @@ namespace resaxs
 
 template <typename FLT_T>
 calc_saxs<FLT_T>::calc_saxs(const vector<string> & bodies_filenames, const string & exe_base_path, bool atomic, FLT_T q_min, FLT_T q_max, unsigned int q_n,
-    const profile_params<FLT_T> & params, verbose_levels verbose_lvl) :
-    calc_saxs(bodies_filenames, exe_base_path, atomic, q_min, q_max, q_n, profile_params<FLT_T>(params), verbose_lvl)
+    const calc_params<FLT_T> & params, verbose_levels verbose_lvl) :
+    calc_saxs(bodies_filenames, exe_base_path, atomic, q_min, q_max, q_n, calc_params<FLT_T>(params), verbose_lvl)
 {}
 
 template <typename FLT_T>
 calc_saxs<FLT_T>::calc_saxs(const vector<string> & bodies_filenames, const string & exe_base_path, bool atomic, FLT_T q_min, FLT_T q_max, unsigned int q_n,
-    profile_params<FLT_T> && params, verbose_levels verbose_lvl) :
+    calc_params<FLT_T> && params, verbose_levels verbose_lvl) :
     params_(move(params)), verbose_lvl_(verbose_lvl)
 {
     // get the q-values from the ref profile if possible
@@ -61,7 +61,7 @@ calc_saxs<FLT_T>::calc_saxs(const vector<string> & bodies_filenames, const strin
         for (unsigned int i = 0; i < q_n; ++i)
             v_q_[i] = q_min + i * step;
     }
-    v_Iq_.resize(v_q_.size());
+    intensity_.resize(v_q_.size());
 
     try
     {
@@ -94,7 +94,7 @@ template <typename FLT_T>
 void calc_saxs<FLT_T>::host_saxs()
 {
     atomic_form_factors<FLT_T>::generate(v_q_, t_factors_);
-    host_debye<double, FLT_T, real4>::calc_curve(v_q_, v_bodies_, t_factors_, v_Iq_);
+    host_debye<double, FLT_T, real4>::calc_curve(v_q_, v_bodies_, t_factors_, intensity_);
 }
 
 template <typename FLT_T>
@@ -103,12 +103,12 @@ void calc_saxs<FLT_T>::verify_result()
     calc_saxs<FLT_T> host_calc(*this);
 
     // zero the result in the host calc
-    host_calc.v_Iq_.clear();
-    host_calc.v_Iq_.resize(v_q_.size());
+    host_calc.intensity_.clear();
+    host_calc.intensity_.resize(v_q_.size());
     host_calc.host_saxs();
 
     double chisq = 0;
-    for (auto i1 = v_Iq_.begin(), i2 = host_calc.v_Iq_.begin(); i1 != v_Iq_.end(), i2 != host_calc.v_Iq_.end(); ++i1, ++i2)
+    for (auto i1 = intensity_.begin(), i2 = host_calc.intensity_.begin(); i1 != intensity_.end(), i2 != host_calc.intensity_.end(); ++i1, ++i2)
     {
         chisq += (*i1 - *i2) * (*i1 - *i2) / *i2;
     }

@@ -170,7 +170,7 @@ int main(int argc, char ** argv)
 
         if (dp)
         {
-            profile_params<double> params{ make_param<double>(scale, fit_filename), 
+            calc_params<double> params{ make_param<double>(scale, fit_filename), 
                 make_param<double>(water_weight, fit_filename) };
             calc_saxs<double> calc(pdb_filenames.getValue(), getexepath(), true, q_min.getValue(), q_max.getValue(), q_n.getValue(),
                 move(params), calc_saxs<double>::verbose_levels(n_verbose_lvl));
@@ -183,14 +183,14 @@ int main(int argc, char ** argv)
             ofstream outfile(out_filename.getValue());
             for (unsigned int i = 0; i < calc.v_q_.size(); ++i)
             {
-                outfile << fixed << calc.v_q_[i] << "     \t" << calc.v_Iq_[i] << endl;
+                outfile << fixed << calc.v_q_[i] << "     \t" << calc.intensity_[i] << endl;
             }
         }
         else
         {
             clock_t t1 = clock();
 
-            profile_params<float> params{ make_param<float>(scale, fit_filename),
+            calc_params<float> params{ make_param<float>(scale, fit_filename),
                 make_param<float>(water_weight, fit_filename), saxs_profile<float>::read_from_file(fit_filename.getValue()) };
             calc_saxs<float> calc(pdb_filenames.getValue(), getexepath(), true, q_min.getValue(), q_max.getValue(), q_n.getValue(),
                 move(params), calc_saxs<float>::verbose_levels(n_verbose_lvl));
@@ -201,22 +201,23 @@ int main(int argc, char ** argv)
             cout << endl << "Preprocessing time: " << double(clock() - t1) * 1000 / CLOCKS_PER_SEC << "ms" << endl << endl;
             t1 = clock();
 
-            profile_params<float> best_params;
+            fitted_params<float> best_params;
 
             if (device == "host")
                 calc.host_saxs();
             else
             {
                 best_params = calc.fit_ensemble(calc_cl_saxs<float>(algorithm::saxs_enum::saxs_gpu_pt_wf, device, 64));
+                calc.intensity_ = best_params.intensity_; // TODO: remove usage of calc.intensity_;
             }
             
             cout << endl << "SAXS calc time: " << double(clock() - t1) * 1000 / CLOCKS_PER_SEC << "ms" << endl << endl;
 
             ofstream outfile(out_filename.getValue());
-            outfile << "# scale: " << best_params.scale_ << ", water weight: " << best_params.water_weight_ << endl;
+            outfile << "# scale: " << best_params.scale_ << ", water weight: " << best_params.water_weight_ << ", Chi: " << sqrt(best_params.chi2_) << endl;
             for (unsigned int i = 0; i < calc.v_q_.size(); ++i)
             {
-                outfile << fixed << calc.v_q_[i] << "     \t" << calc.v_Iq_[i] << endl;
+                outfile << fixed << calc.v_q_[i] << "     \t" << calc.intensity_[i] << endl;
             }
 
             if (verify_res.getValue())

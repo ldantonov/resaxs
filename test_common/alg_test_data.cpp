@@ -49,7 +49,7 @@ alg_test_data<FLT_T, FLT4_T>::alg_test_data(unsigned long seed, unsigned int n_b
     }
 
     n_factors_ = (unsigned int)(t_factors_.size() / v_q_.size());
-    v_Iq_.resize(v_q_.size());
+    intensity_.resize(v_q_.size());
 
     v_bodies_.resize(n_bodies);  // 1888
     init_bodies();
@@ -57,7 +57,7 @@ alg_test_data<FLT_T, FLT4_T>::alg_test_data(unsigned long seed, unsigned int n_b
 
 template <typename FLT_T, typename FLT4_T>
 alg_test_data<FLT_T, FLT4_T>::alg_test_data(const alg_test_data & other) : rand_engine_(other.rand_engine_),
-    v_bodies_(other.v_bodies_), v_q_(other.v_q_), n_factors_(other.n_factors_), t_factors_(other.t_factors_), v_Iq_(other.v_Iq_),
+    v_bodies_(other.v_bodies_), v_q_(other.v_q_), n_factors_(other.n_factors_), t_factors_(other.t_factors_), intensity_(other.intensity_),
     show_timings_(other.show_timings_)
 {
 }
@@ -109,7 +109,7 @@ void alg_test_data<FLT_T, FLT4_T>::cl_saxs(algorithm::saxs_enum alg_pick, const 
     saxs_alg->initialize();
 
     clock_t t0 = clock();
-    saxs_alg->calc_curve(v_bodies_, v_Iq_);
+    saxs_alg->calc_curve(v_bodies_, intensity_);
     clock_t t1 = clock();
 
     if (show_timings_)
@@ -124,7 +124,7 @@ void alg_test_data<FLT_T, FLT4_T>::cl_saxs(algorithm::saxs_enum alg_pick, const 
         {
             int index, len;
             move_bodies(index, len);
-            saxs_alg->recalc_curve(v_bodies_, index, len, v_Iq_);
+            saxs_alg->recalc_curve(v_bodies_, index, len, intensity_);
         }
         t_total = clock() - t2;
         if (show_timings_)
@@ -151,7 +151,7 @@ void alg_test_data<FLT_T, FLT4_T>::host_saxs(int repeats, typename host_debye<FL
     }
 
     clock_t t0 = clock();
-    calc_fn(&v_q_.front(), int(v_q_.size()), &v_bodies_.front(), int(v_bodies_.size()), &t_factors_.front(), n_factors_, &v_Iq_.front());
+    calc_fn(&v_q_.front(), int(v_q_.size()), &v_bodies_.front(), int(v_bodies_.size()), &t_factors_.front(), n_factors_, &intensity_.front());
     clock_t t1 = clock();
     if (show_timings_)
         std::cout << "Host CPU full SAXS calculation time: " << double(t1-t0) * 1000 / CLOCKS_PER_SEC  << "ms" << std::endl << std::endl;
