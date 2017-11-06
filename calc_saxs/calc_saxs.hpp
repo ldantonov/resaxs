@@ -87,6 +87,7 @@ namespace resaxs
     public:
         profile_param<FLT_T> scale_ = { 1, false };           // scale of the profile relative to the reference
         profile_param<FLT_T> water_weight_ = { 0, false };    // weight parameter for the water layer
+        profile_param<FLT_T> exp_factor_ = { 1, false };      // expansion factor parameter for the excluded volume
         saxs_profile<FLT_T> ref_profile_;       // reference (e.g. experimental) profile
     };
 
@@ -95,9 +96,46 @@ namespace resaxs
     {
         FLT_T scale_ = 1;           // profile scaling factor
         FLT_T water_weight_ = 0;    // weight parameter for the water layer
+        FLT_T exp_factor_ = 1;        // expansion factor parameter for the excluded volume
         FLT_T chi2_ = std::numeric_limits<FLT_T>::max();
         std::vector<FLT_T> intensity_;
+
+        bool operator ==(const fitted_params<FLT_T> & other) const
+        {
+            return chi2_ == other.chi2_;
+        }
+
+        bool operator <(const fitted_params<FLT_T> & other) const
+        {
+            return chi2_ < other.chi2_;
+        }
+
+        bool operator <=(const fitted_params<FLT_T> & other) const
+        {
+            return chi2_ <= other.chi2_;
+        }
+
+        bool operator >(const fitted_params<FLT_T> & other) const
+        {
+            return !operator <=(other);
+        }
+
+        bool operator >=(const fitted_params<FLT_T> & other) const
+        {
+            return !operator <(other);
+        }
+
+        template <typename FLT_T>
+        friend std::ostream & operator <<(std::ostream & os, const fitted_params<FLT_T> & params);
     };
+
+    template <typename FLT_T>
+    inline std::ostream & operator <<(std::ostream & os, const fitted_params<FLT_T> & params)
+    {
+        os << "# scale: " << params.scale_ << ", water weight: " << params.water_weight_
+            << ", expansion factor: " << params.exp_factor_ << ", Chi: " << sqrt(params.chi2_) << endl;
+        return os;
+    }
 
     template <typename FLT_T>
     class calc_cl_saxs
@@ -108,6 +146,7 @@ namespace resaxs
 
     public:
         calc_params<FLT_T> params_;
+        unsigned int calc_count = 0;
 
     public:
         calc_cl_saxs(algorithm::saxs_enum alg_pick, const std::string & dev_spec, unsigned int wf_size) :
@@ -133,6 +172,7 @@ namespace resaxs
         ///
         void calc(const std::vector<real4> & bodies, std::vector<FLT_T> & v_Iq)
         {
+            ++calc_count;
             if (saxs_alg_->computing())
             {
                 set_params();
@@ -164,7 +204,7 @@ namespace resaxs
             auto & saxs_params = saxs_alg_->access_params();
             auto & water_params = saxs_params.get_implicit_water_params();
             water_params.set_water_weight(params_.water_weight_);
-            //saxs_params.get_ff_params().set_expansion_factor(1.04f);
+            saxs_params.get_ff_params().set_expansion_factor(params_.exp_factor_);
         }
     };
 
@@ -196,32 +236,124 @@ namespace resaxs
 
             eval.params_.ref_profile_.initialize(v_q_);
 
-            fitted_params<FLT_T> best_params;
-
-            FLT_T c2 = params_.water_weight_.fit() ? FLT_T(-2.0) : params_.water_weight_;
+            FLT_T min_c2 = params_.water_weight_.fit() ? FLT_T(-2.0) : params_.water_weight_;
             FLT_T max_c2 = params_.water_weight_.fit() ? FLT_T(4.0) : params_.water_weight_;
+
+            eval.params_.exp_factor_.fix(params_.exp_factor_);
+
+            fitted_params<FLT_T> left_point = fit_ensemble(eval, min_c2);
+            fitted_params<FLT_T> right_point = fit_ensemble(eval, max_c2);
+
+            fitted_params<FLT_T> best_params = fit_ensemble(eval, left_point, right_point);
+
+            cout << eval.calc_count << " calculations." << endl;
+
+            return best_params;
+        }
+
+        template <typename CALC_T>
+        fitted_params<FLT_T> fit_ensemble(CALC_T & eval, const fitted_params<FLT_T> & fit_min, const fitted_params<FLT_T> & fit_max)
+        {
+            auto ww_delta = std::fabs(fit_min.water_weight_ - fit_max.water_weight_);
+            auto chi_delta = std::fabs(std::sqrt(fit_min.chi2_) - std::sqrt(fit_max.chi2_)) / std::sqrt(fit_max.chi2_);
+            if (ww_delta < 0.001 && chi_delta < 0.0001)
+            {
+                cout << "found min: " << (fit_min < fit_max ? fit_min : fit_max);
+                return fit_min < fit_max ? fit_min : fit_max;
+            }
+
+            fitted_params<FLT_T> mid_point = fit_ensemble(eval, fit_min.water_weight_ + ww_delta / 2);
+
+            if (fit_min > mid_point && mid_point > fit_max)
+                return fit_ensemble(eval, mid_point, fit_max);
+
+            if (fit_min < mid_point && mid_point < fit_max)
+                return fit_ensemble(eval, fit_min, mid_point);
+
+            fitted_params<FLT_T> left_fit = fit_ensemble(eval, fit_min, mid_point);
+            fitted_params<FLT_T> right_fit = fit_ensemble(eval, mid_point, fit_max);
+            return left_fit < right_fit ? left_fit : right_fit;
+       }
+
+        template <typename CALC_T>
+        fitted_params<FLT_T> fit_ensemble(CALC_T & eval, FLT_T ww)
+        {
+            eval.params_.scale_ = params_.scale_;   // reset scale param
+            eval.params_.water_weight_.fix(ww);
+
+            fitted_params<FLT_T> fit_params;
+            fit_params.water_weight_ = ww;
+            fit_params.exp_factor_ = params_.exp_factor_;
+            fit_params.intensity_ = avg_ensemble(eval);
+
+            // fit the scale parameter, if needed, and scale the intensity
+            fit_params.scale_ = params_.scale_.fit() ? params_.ref_profile_.optimize_scale_for(fit_params.intensity_) : params_.scale_;
+            fit_params.intensity_ *= fit_params.scale_;
+
+            fit_params.chi2_ = params_.ref_profile_.chi_square(fit_params.intensity_);
+
+            return fit_params;
+        }
+
+        template <typename CALC_T>
+        fitted_params<FLT_T> fit_ensemble1(CALC_T & eval)
+        {
+            if (verbose_lvl_ >= NORMAL)
+                cout << "Calculating ensemble average for " << v_models_.size() << " conformations.\n";
+
+            eval.params_.ref_profile_.initialize(v_q_);
+
+            fitted_params<FLT_T> best_params;
+            FLT_T prev_chi2 = best_params.chi2_;
+
+            const unsigned int default_slices = 4;
+            const unsigned int fixed_value_slices = 0;
+            unsigned int ef_slices = params_.exp_factor_.fit() ? default_slices : fixed_value_slices;
+            FLT_T min_c1 = params_.exp_factor_.fit() ? FLT_T(0.95) : params_.exp_factor_;
+            FLT_T max_c1 = params_.exp_factor_.fit() ? FLT_T(1.05) : params_.exp_factor_;
+            FLT_T delta_c1 = (max_c1 - min_c1) / ef_slices;
+            unsigned int ww_slices = params_.water_weight_.fit() ? default_slices : fixed_value_slices;
+            FLT_T min_c2 = params_.water_weight_.fit() ? FLT_T(-2.0) : params_.water_weight_;
+            FLT_T max_c2 = params_.water_weight_.fit() ? FLT_T(4.0) : params_.water_weight_;
+            FLT_T delta_c2 = (max_c2 - min_c2) / ww_slices;
+
+            // adjust starting range to include endpoints
+            min_c2 -= delta_c2;
+            max_c2 += delta_c2;
+            ww_slices += 2;
+
+            eval.params_.exp_factor_.fix(params_.exp_factor_);
+
+            int count = 0;
             do
             {
-                eval.params_.scale_ = params_.scale_;   // reset scale param
-                eval.params_.water_weight_.fix(c2);
-
-                auto iq = avg_ensemble(eval);
-
-                // fit the scale parameter, if needed, and scale the intensity
-                FLT_T scale = params_.scale_.fit() ? params_.ref_profile_.optimize_scale_for(iq) : params_.scale_;
-                iq *= scale;
-
-                // check the fit
-                FLT_T chi2 = params_.ref_profile_.chi_square(iq);
-                if (chi2 < best_params.chi2_)
+                for (unsigned int j = 1; j < ww_slices; ++j)
                 {
-                    best_params.chi2_ = chi2;
-                    best_params.scale_ = scale;
-                    best_params.water_weight_ = c2;
-                    best_params.intensity_ = std::move(iq);
+                    FLT_T c2 = min_c2 + j * delta_c2;
+
+                    fitted_params<FLT_T> new_params = fit_ensemble(eval, c2);
+                    ++count;
+                    if (new_params.chi2_ < best_params.chi2_)
+                    {
+                        FLT_T prev_chi2 = best_params.chi2_;
+
+                        best_params = std::move(new_params);
+                        cout << "found min: " << best_params;
+                        if (std::fabs(std::sqrt(best_params.chi2_) - std::sqrt(prev_chi2)) / std::sqrt(prev_chi2) < 0.0001)
+                        {
+                            delta_c1 = delta_c2 = 0;
+                            break;
+                        }
+                    }
                 }
-                c2 += FLT_T(0.1);
-            } while (c2 <= max_c2);
+
+                ww_slices = default_slices;     // reset slices to exclude endpoints
+                min_c2 = std::max(best_params.water_weight_ - delta_c2, FLT_T(-2.0));
+                max_c2 = std::min(best_params.water_weight_ + delta_c2, FLT_T(4.0));
+                delta_c2 = (max_c2 - min_c2) / ww_slices;
+            } while (delta_c2 > 0.001);
+
+            cout << count << " SAXS evals." << endl;
 
             return best_params;
         }
@@ -255,6 +387,7 @@ namespace resaxs
         std::vector<FLT_T> intensity_;
 
     private:
+
 #if 0
         void parse_bodies(const std::string & filename);
 #endif

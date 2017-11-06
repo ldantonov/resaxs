@@ -90,6 +90,25 @@ public:
     }
 };
 
+class expansion_range : public TCLAP::Constraint<float>
+{
+public:
+    virtual std::string description() const override
+    {
+        return "[0.95, 1.05]";
+    }
+
+    virtual std::string shortID() const override
+    {
+        return description();
+    }
+
+    virtual bool check(const float& value) const override
+    {
+        return value >= 0.95 && value <= 1.05;
+    }
+};
+
 /// Create a profile_param out of command line arguments. The fit option will be set appropriately.
 ///     arg             - command line argument
 ///     fit_filename    - command line argument for the intensity file to use for fitting
@@ -140,6 +159,10 @@ int main(int argc, char ** argv)
         TCLAP::ValueArg<float> water_weight("w", "water", "Weight of the water layer contribution.", false, 0, &ww_range);
         cmd.add(water_weight);
 
+        expansion_range ef_range;
+        TCLAP::ValueArg<float> exp_factor("e", "exp_factor", "Excluded volume expansion factor.", false, 1, &ef_range);
+        cmd.add(exp_factor);
+
         TCLAP::ValueArg<unsigned int> q_n("n", "q_n", "Number of q values.", false, 500, "whole number");
         cmd.add(q_n);
         TCLAP::ValueArg<float> q_max("", "q_max", "Maximum value for q.", false, 0.75, "floating-point value");
@@ -171,7 +194,9 @@ int main(int argc, char ** argv)
         if (dp)
         {
             calc_params<double> params{ make_param<double>(scale, fit_filename), 
-                make_param<double>(water_weight, fit_filename) };
+                make_param<double>(water_weight, fit_filename),
+                make_param<double>(exp_factor, fit_filename),
+                saxs_profile<double>::read_from_file(fit_filename.getValue()) };
             calc_saxs<double> calc(pdb_filenames.getValue(), getexepath(), true, q_min.getValue(), q_max.getValue(), q_n.getValue(),
                 move(params), calc_saxs<double>::verbose_levels(n_verbose_lvl));
             if (device == "host")
@@ -191,7 +216,9 @@ int main(int argc, char ** argv)
             clock_t t1 = clock();
 
             calc_params<float> params{ make_param<float>(scale, fit_filename),
-                make_param<float>(water_weight, fit_filename), saxs_profile<float>::read_from_file(fit_filename.getValue()) };
+                make_param<float>(water_weight, fit_filename),
+                make_param<float>(exp_factor, fit_filename),
+                saxs_profile<float>::read_from_file(fit_filename.getValue()) };
             calc_saxs<float> calc(pdb_filenames.getValue(), getexepath(), true, q_min.getValue(), q_max.getValue(), q_n.getValue(),
                 move(params), calc_saxs<float>::verbose_levels(n_verbose_lvl));
 
@@ -214,7 +241,8 @@ int main(int argc, char ** argv)
             cout << endl << "SAXS calc time: " << double(clock() - t1) * 1000 / CLOCKS_PER_SEC << "ms" << endl << endl;
 
             ofstream outfile(out_filename.getValue());
-            outfile << "# scale: " << best_params.scale_ << ", water weight: " << best_params.water_weight_ << ", Chi: " << sqrt(best_params.chi2_) << endl;
+            outfile << "# scale: " << best_params.scale_ << ", water weight: " << best_params.water_weight_
+                << ", expansion factor: " << best_params.exp_factor_ << ", Chi: " << sqrt(best_params.chi2_) << endl;
             for (unsigned int i = 0; i < calc.v_q_.size(); ++i)
             {
                 outfile << fixed << calc.v_q_[i] << "     \t" << calc.intensity_[i] << endl;

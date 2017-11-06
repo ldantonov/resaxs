@@ -558,10 +558,6 @@ namespace algorithm {
             this->queue_.enqueueNDRangeKernel(kernel_hsum_, cl::NullRange, cl::NDRange(n_q_), cl::NullRange);
             changed_buffers.sum = true;
 
-            // retrieve the results I(q)
-            out_Iqq.resize(n_q_);
-            b_Iqq_.read_to(out_Iqq, this->queue_);
-            
             /*b_block_sums_.read_to(blocks, this->queue_);
             
             ofstream f1("saxs_sums2.dat", ios::trunc);
@@ -574,6 +570,10 @@ namespace algorithm {
                 f1 << endl;
             }*/
         }
+
+        // retrieve the results I(q)
+        out_Iqq.resize(n_q_);
+        b_Iqq_.read_to(out_Iqq, this->queue_);
     }
 
     //////////////////////////////////////////////////////////////////////////
