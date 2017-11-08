@@ -26,6 +26,7 @@
 #include <string>
 #include <memory>
 #include <cassert>
+#include <initializer_list>
 #include "resaxs.hpp"
 #include "utils.hpp"
 #include "host_debye.hpp"
@@ -63,6 +64,12 @@ namespace resaxs
         return v1;
     }
 
+    template <typename T>
+    inline bool contains(std::initializer_list<T> il, const T& value)
+    {
+        auto last = std::end(il);
+        return std::find(std::begin(il), last, value) != last;
+    }
 
     template <typename FLT_T>
     struct profile_param
@@ -100,7 +107,16 @@ namespace resaxs
         FLT_T chi2_ = std::numeric_limits<FLT_T>::max();
         std::vector<FLT_T> intensity_;
 
+        /// tests for identity, not just equal chi
+        ///
         bool operator ==(const fitted_params<FLT_T> & other) const
+        {
+            return scale_ == other.scale_ && water_weight_ == other.water_weight_ && exp_factor_ == other.exp_factor_;
+        }
+
+        /// tests for equal chi
+        ///
+        bool same_fit(const fitted_params<FLT_T> & other) const
         {
             return chi2_ == other.chi2_;
         }
@@ -236,13 +252,15 @@ namespace resaxs
 
             eval.params_.ref_profile_.initialize(v_q_);
 
-            FLT_T min_c2 = params_.water_weight_.fit() ? FLT_T(-2.0) : params_.water_weight_;
-            FLT_T max_c2 = params_.water_weight_.fit() ? FLT_T(4.0) : params_.water_weight_;
+            FLT_T min_ef = params_.exp_factor_.fit() ? FLT_T(0.95) : params_.exp_factor_;
+            FLT_T max_ef = params_.exp_factor_.fit() ? FLT_T(1.05) : params_.exp_factor_;
+            FLT_T min_ww = params_.water_weight_.fit() ? FLT_T(-2.0) : params_.water_weight_;
+            FLT_T max_ww = params_.water_weight_.fit() ? FLT_T(4.0) : params_.water_weight_;
 
-            eval.params_.exp_factor_.fix(params_.exp_factor_);
+            //eval.params_.exp_factor_.fix(params_.exp_factor_);
 
-            fitted_params<FLT_T> left_point = fit_ensemble(eval, min_c2);
-            fitted_params<FLT_T> right_point = fit_ensemble(eval, max_c2);
+            fitted_params<FLT_T> left_point = fit_ensemble(eval, min_ef, min_ww);
+            fitted_params<FLT_T> right_point = fit_ensemble(eval, max_ef, max_ww);
 
             fitted_params<FLT_T> best_params = fit_ensemble(eval, left_point, right_point);
 
@@ -254,15 +272,63 @@ namespace resaxs
         template <typename CALC_T>
         fitted_params<FLT_T> fit_ensemble(CALC_T & eval, const fitted_params<FLT_T> & fit_min, const fitted_params<FLT_T> & fit_max)
         {
+            auto ef_delta = std::fabs(fit_min.exp_factor_ - fit_max.exp_factor_);
             auto ww_delta = std::fabs(fit_min.water_weight_ - fit_max.water_weight_);
             auto chi_delta = std::fabs(std::sqrt(fit_min.chi2_) - std::sqrt(fit_max.chi2_)) / std::sqrt(fit_max.chi2_);
-            if (ww_delta < 0.001 && chi_delta < 0.0001)
+            if (ef_delta < 0.0001 && ww_delta < 0.001 || chi_delta < 0.0001)
             {
                 cout << "found min: " << (fit_min < fit_max ? fit_min : fit_max);
                 return fit_min < fit_max ? fit_min : fit_max;
             }
 
-            fitted_params<FLT_T> mid_point = fit_ensemble(eval, fit_min.water_weight_ + ww_delta / 2);
+            if (ef_delta < 0.0001)
+            {
+                fitted_params<FLT_T> mid_point = fit_ensemble(eval,  fit_min.exp_factor_, fit_min.water_weight_ + ww_delta / 2);
+
+                if (fit_min > mid_point && mid_point > fit_max)
+                    return fit_ensemble(eval, mid_point, fit_max);
+
+                if (fit_min < mid_point && mid_point < fit_max)
+                    return fit_ensemble(eval, fit_min, mid_point);
+
+                fitted_params<FLT_T> left_fit = fit_ensemble(eval, fit_min, mid_point);
+                fitted_params<FLT_T> right_fit = fit_ensemble(eval, mid_point, fit_max);
+                return left_fit < right_fit ? left_fit : right_fit;
+            }
+
+            if (ww_delta < 0.001)
+            {
+                fitted_params<FLT_T> mid_point = fit_ensemble(eval, fit_min.exp_factor_ + ef_delta / 2, fit_min.water_weight_);
+
+                if (fit_min > mid_point && mid_point > fit_max)
+                    return fit_ensemble(eval, mid_point, fit_max);
+
+                if (fit_min < mid_point && mid_point < fit_max)
+                    return fit_ensemble(eval, fit_min, mid_point);
+
+                fitted_params<FLT_T> left_fit = fit_ensemble(eval, fit_min, mid_point);
+                fitted_params<FLT_T> right_fit = fit_ensemble(eval, mid_point, fit_max);
+                return left_fit < right_fit ? left_fit : right_fit;
+            }
+
+            fitted_params<FLT_T> mid_point = fit_ensemble(eval, fit_min.exp_factor_ + ef_delta / 2, fit_min.water_weight_ + ww_delta / 2);
+            fitted_params<FLT_T> s_mid_point = fit_ensemble(eval, fit_min.exp_factor_ + ef_delta / 2, fit_min.water_weight_);
+            fitted_params<FLT_T> w_mid_point = fit_ensemble(eval, fit_min.exp_factor_, fit_min.water_weight_ + ww_delta / 2);
+            fitted_params<FLT_T> n_mid_point = fit_ensemble(eval, fit_min.exp_factor_ + ef_delta / 2, fit_max.water_weight_);
+            fitted_params<FLT_T> e_mid_point = fit_ensemble(eval, fit_max.exp_factor_, fit_min.water_weight_ + ww_delta / 2);
+
+            fitted_params<FLT_T> min_point = std::min({ fit_min, fit_max, mid_point, s_mid_point, w_mid_point, n_mid_point, e_mid_point });
+
+            fitted_params<FLT_T> bad_fit;
+
+            fitted_params<FLT_T> sw_fit = contains({ fit_min, w_mid_point, mid_point, s_mid_point }, min_point) ? fit_ensemble(eval, fit_min, mid_point) : bad_fit;
+            fitted_params<FLT_T> nw_fit = contains({ w_mid_point, mid_point, n_mid_point }, min_point) ? fit_ensemble(eval, w_mid_point, n_mid_point) : bad_fit;
+            fitted_params<FLT_T> ne_fit = contains({ fit_max, n_mid_point, mid_point, e_mid_point }, min_point) ? fit_ensemble(eval, mid_point, fit_max) : bad_fit;
+            fitted_params<FLT_T> se_fit = contains({ s_mid_point, mid_point, e_mid_point }, min_point) ? fit_ensemble(eval, s_mid_point, e_mid_point) : bad_fit;
+
+            return std::min({ sw_fit, nw_fit, ne_fit, se_fit });
+
+            /*fitted_params<FLT_T> mid_point = fit_ensemble(eval, fit_min.water_weight_ + ww_delta / 2);
 
             if (fit_min > mid_point && mid_point > fit_max)
                 return fit_ensemble(eval, mid_point, fit_max);
@@ -272,18 +338,19 @@ namespace resaxs
 
             fitted_params<FLT_T> left_fit = fit_ensemble(eval, fit_min, mid_point);
             fitted_params<FLT_T> right_fit = fit_ensemble(eval, mid_point, fit_max);
-            return left_fit < right_fit ? left_fit : right_fit;
+            return left_fit < right_fit ? left_fit : right_fit;*/
        }
 
         template <typename CALC_T>
-        fitted_params<FLT_T> fit_ensemble(CALC_T & eval, FLT_T ww)
+        fitted_params<FLT_T> fit_ensemble(CALC_T & eval, FLT_T exp_factor, FLT_T water_weight)
         {
             eval.params_.scale_ = params_.scale_;   // reset scale param
-            eval.params_.water_weight_.fix(ww);
+            eval.params_.exp_factor_.fix(exp_factor);
+            eval.params_.water_weight_.fix(water_weight);
 
             fitted_params<FLT_T> fit_params;
-            fit_params.water_weight_ = ww;
-            fit_params.exp_factor_ = params_.exp_factor_;
+            fit_params.exp_factor_ = exp_factor;
+            fit_params.water_weight_ = water_weight;
             fit_params.intensity_ = avg_ensemble(eval);
 
             // fit the scale parameter, if needed, and scale the intensity
