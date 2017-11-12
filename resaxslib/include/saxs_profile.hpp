@@ -146,7 +146,7 @@ public:
         return num / denom;
     }
 
-    FLT_T chi_square(const std::vector<FLT_T> &other_Iq) const
+    FLT_T chi_square_chi(const std::vector<FLT_T> &other_Iq) const
     {
         assert(other_Iq.size() == size());
         assert(intensity_.size() == size());
@@ -157,7 +157,7 @@ public:
             FLT_T diff = intensity_[i] - other_Iq[i];
             chi2 += diff * diff * v_precision2_[i];
         }
-        return chi2 / size();
+        return std::sqrt(chi2 / size());
     }
 
 private:

@@ -242,7 +242,7 @@ int main(int argc, char ** argv)
 
             ofstream outfile(out_filename.getValue());
             outfile << "# scale: " << best_params.scale_ << ", water weight: " << best_params.water_weight_
-                << ", expansion factor: " << best_params.exp_factor_ << ", Chi: " << sqrt(best_params.chi2_) << endl;
+                << ", expansion factor: " << best_params.exp_factor_ << ", Chi: " << best_params.chi_ << endl;
             for (unsigned int i = 0; i < calc.v_q_.size(); ++i)
             {
                 outfile << fixed << calc.v_q_[i] << "     \t" << calc.intensity_[i] << endl;

@@ -36,6 +36,7 @@
 namespace resaxs
 {
 
+    /// Enhanced operations for std::vector
     template <typename T, typename U,
         typename = std::enable_if_t<std::is_arithmetic<T>::value>,
         typename = std::enable_if_t<std::is_arithmetic<U>::value>>
@@ -64,11 +65,19 @@ namespace resaxs
         return v1;
     }
 
+    /// Check if the list contains the value.
     template <typename T>
     inline bool contains(std::initializer_list<T> il, const T& value)
     {
         auto last = std::end(il);
         return std::find(std::begin(il), last, value) != last;
+    }
+
+    /// If the value falls below the low threshold clamp it down to zero.
+    template <typename T, typename = std::enable_if_t<std::is_arithmetic<T>::value>>
+    constexpr T clamp_to_zero(T value, T lo)
+    {
+        return value > lo ? value : 0;
     }
 
     template <typename FLT_T>
@@ -95,7 +104,7 @@ namespace resaxs
         profile_param<FLT_T> scale_ = { 1, false };           // scale of the profile relative to the reference
         profile_param<FLT_T> water_weight_ = { 0, false };    // weight parameter for the water layer
         profile_param<FLT_T> exp_factor_ = { 1, false };      // expansion factor parameter for the excluded volume
-        saxs_profile<FLT_T> ref_profile_;       // reference (e.g. experimental) profile
+        saxs_profile<FLT_T> ref_profile_;                     // reference (e.g. experimental) profile
     };
 
     template <typename FLT_T>
@@ -103,9 +112,9 @@ namespace resaxs
     {
         FLT_T scale_ = 1;           // profile scaling factor
         FLT_T water_weight_ = 0;    // weight parameter for the water layer
-        FLT_T exp_factor_ = 1;        // expansion factor parameter for the excluded volume
-        FLT_T chi2_ = std::numeric_limits<FLT_T>::max();
-        std::vector<FLT_T> intensity_;
+        FLT_T exp_factor_ = 1;      // expansion factor parameter for the excluded volume
+        FLT_T chi_ = std::numeric_limits<FLT_T>::max(); // chi goodness of fit
+        std::vector<FLT_T> intensity_;  // SAXS intensity
 
         /// tests for identity, not just equal chi
         ///
@@ -118,17 +127,17 @@ namespace resaxs
         ///
         bool same_fit(const fitted_params<FLT_T> & other) const
         {
-            return chi2_ == other.chi2_;
+            return chi_ == other.chi_;
         }
 
         bool operator <(const fitted_params<FLT_T> & other) const
         {
-            return chi2_ < other.chi2_;
+            return chi_ < other.chi_;
         }
 
         bool operator <=(const fitted_params<FLT_T> & other) const
         {
-            return chi2_ <= other.chi2_;
+            return chi_ <= other.chi_;
         }
 
         bool operator >(const fitted_params<FLT_T> & other) const
@@ -149,7 +158,7 @@ namespace resaxs
     inline std::ostream & operator <<(std::ostream & os, const fitted_params<FLT_T> & params)
     {
         os << "# scale: " << params.scale_ << ", water weight: " << params.water_weight_
-            << ", expansion factor: " << params.exp_factor_ << ", Chi: " << sqrt(params.chi2_) << endl;
+            << ", expansion factor: " << params.exp_factor_ << ", Chi: " << params.chi_ << endl;
         return os;
     }
 
@@ -161,8 +170,8 @@ namespace resaxs
         using saxs_class = algorithm::i_saxs<FLT_T, alg_base>;
 
     public:
-        calc_params<FLT_T> params_;
-        unsigned int calc_count = 0;
+        calc_params<FLT_T> params_;     // current params for the calculation
+        unsigned int calc_count = 0;    // number of calculations performed
 
     public:
         calc_cl_saxs(algorithm::saxs_enum alg_pick, const std::string & dev_spec, unsigned int wf_size) :
@@ -244,8 +253,10 @@ namespace resaxs
         calc_saxs(const calc_saxs & other) = default;
         void set_verbose_level(verbose_levels verbose_lvl = NORMAL) { verbose_lvl_ = verbose_lvl; }
 
+        /// Fit the ensemble parameters by depth-first binary search of the solution space.
+        /// \param[in] eval SAXS evaluator object
         template <typename CALC_T>
-        fitted_params<FLT_T> fit_ensemble(CALC_T & eval)
+        fitted_params<FLT_T> fit_ensemble_binary(CALC_T & eval)
         {
             if (verbose_lvl_ >= NORMAL)
                 cout << "Calculating ensemble average for " << v_models_.size() << " conformations.\n";
@@ -257,24 +268,25 @@ namespace resaxs
             FLT_T min_ww = params_.water_weight_.fit() ? FLT_T(-2.0) : params_.water_weight_;
             FLT_T max_ww = params_.water_weight_.fit() ? FLT_T(4.0) : params_.water_weight_;
 
-            //eval.params_.exp_factor_.fix(params_.exp_factor_);
+            fitted_params<FLT_T> fit_min = fit_ensemble(eval, min_ef, min_ww);
+            fitted_params<FLT_T> fit_max = fit_ensemble(eval, max_ef, max_ww);
 
-            fitted_params<FLT_T> left_point = fit_ensemble(eval, min_ef, min_ww);
-            fitted_params<FLT_T> right_point = fit_ensemble(eval, max_ef, max_ww);
-
-            fitted_params<FLT_T> best_params = fit_ensemble(eval, left_point, right_point);
+            fitted_params<FLT_T> best_params = fit_ensemble_binary_convex(eval, fit_min, fit_max);
 
             cout << eval.calc_count << " calculations." << endl;
 
             return best_params;
         }
 
+        /// Fit the ensemble parameters by FULL depth-first binary search of the solution space.
+        /// This will find the true optimum, but is extremely slow.
+        /// \param[in] eval SAXS evaluator object
         template <typename CALC_T>
-        fitted_params<FLT_T> fit_ensemble(CALC_T & eval, const fitted_params<FLT_T> & fit_min, const fitted_params<FLT_T> & fit_max)
+        fitted_params<FLT_T> fit_ensemble_binary_full(CALC_T & eval, const fitted_params<FLT_T> & fit_min, const fitted_params<FLT_T> & fit_max)
         {
             auto ef_delta = std::fabs(fit_min.exp_factor_ - fit_max.exp_factor_);
             auto ww_delta = std::fabs(fit_min.water_weight_ - fit_max.water_weight_);
-            auto chi_delta = std::fabs(std::sqrt(fit_min.chi2_) - std::sqrt(fit_max.chi2_)) / std::sqrt(fit_max.chi2_);
+            auto chi_delta = std::fabs(fit_min.chi_ - fit_max.chi_) / fit_max.chi_;
             if (ef_delta < 0.0001 && ww_delta < 0.001 || chi_delta < 0.0001)
             {
                 cout << "found min: " << (fit_min < fit_max ? fit_min : fit_max);
@@ -285,14 +297,61 @@ namespace resaxs
             {
                 fitted_params<FLT_T> mid_point = fit_ensemble(eval,  fit_min.exp_factor_, fit_min.water_weight_ + ww_delta / 2);
 
+                fitted_params<FLT_T> left_fit = fit_ensemble_binary_full(eval, fit_min, mid_point);
+                fitted_params<FLT_T> right_fit = fit_ensemble_binary_full(eval, mid_point, fit_max);
+                return left_fit < right_fit ? left_fit : right_fit;
+            }
+
+            if (ww_delta < 0.001)
+            {
+                fitted_params<FLT_T> mid_point = fit_ensemble(eval, fit_min.exp_factor_ + ef_delta / 2, fit_min.water_weight_);
+
+                fitted_params<FLT_T> left_fit = fit_ensemble_binary_full(eval, fit_min, mid_point);
+                fitted_params<FLT_T> right_fit = fit_ensemble_binary_full(eval, mid_point, fit_max);
+                return left_fit < right_fit ? left_fit : right_fit;
+            }
+
+            fitted_params<FLT_T> mid_point = fit_ensemble(eval, fit_min.exp_factor_ + ef_delta / 2, fit_min.water_weight_ + ww_delta / 2);
+            fitted_params<FLT_T> s_mid_point = fit_ensemble(eval, fit_min.exp_factor_ + ef_delta / 2, fit_min.water_weight_);
+            fitted_params<FLT_T> w_mid_point = fit_ensemble(eval, fit_min.exp_factor_, fit_min.water_weight_ + ww_delta / 2);
+            fitted_params<FLT_T> n_mid_point = fit_ensemble(eval, fit_min.exp_factor_ + ef_delta / 2, fit_max.water_weight_);
+            fitted_params<FLT_T> e_mid_point = fit_ensemble(eval, fit_max.exp_factor_, fit_min.water_weight_ + ww_delta / 2);
+
+            fitted_params<FLT_T> sw_fit = fit_ensemble_binary_full(eval, fit_min, mid_point);
+            fitted_params<FLT_T> nw_fit = fit_ensemble_binary_full(eval, w_mid_point, n_mid_point);
+            fitted_params<FLT_T> ne_fit = fit_ensemble_binary_full(eval, mid_point, fit_max);
+            fitted_params<FLT_T> se_fit = fit_ensemble_binary_full(eval, s_mid_point, e_mid_point);
+
+            return std::min({ sw_fit, nw_fit, ne_fit, se_fit });
+        }
+
+        /// Fit the ensemble parameters by convex depth-first binary search of the solution space.
+        /// Assumes that the solution space is convex to speed things up.
+        /// \param[in] eval SAXS evaluator object
+        template <typename CALC_T>
+        fitted_params<FLT_T> fit_ensemble_binary_convex(CALC_T & eval, const fitted_params<FLT_T> & fit_min, const fitted_params<FLT_T> & fit_max)
+        {
+            auto ef_delta = std::fabs(fit_min.exp_factor_ - fit_max.exp_factor_);
+            auto ww_delta = std::fabs(fit_min.water_weight_ - fit_max.water_weight_);
+            auto chi_delta = std::fabs(fit_min.chi_ - fit_max.chi_) / fit_max.chi_;
+            if (ef_delta < 0.0001 && ww_delta < 0.001 || chi_delta < 0.0001)
+            {
+                cout << "found min: " << (fit_min < fit_max ? fit_min : fit_max);
+                return fit_min < fit_max ? fit_min : fit_max;
+            }
+
+            if (ef_delta < 0.0001)
+            {
+                fitted_params<FLT_T> mid_point = fit_ensemble(eval, fit_min.exp_factor_, fit_min.water_weight_ + ww_delta / 2);
+
                 if (fit_min > mid_point && mid_point > fit_max)
-                    return fit_ensemble(eval, mid_point, fit_max);
+                return fit_ensemble_binary_convex(eval, mid_point, fit_max);
 
                 if (fit_min < mid_point && mid_point < fit_max)
-                    return fit_ensemble(eval, fit_min, mid_point);
+                return fit_ensemble_binary_convex(eval, fit_min, mid_point);
 
-                fitted_params<FLT_T> left_fit = fit_ensemble(eval, fit_min, mid_point);
-                fitted_params<FLT_T> right_fit = fit_ensemble(eval, mid_point, fit_max);
+                fitted_params<FLT_T> left_fit = fit_ensemble_binary_convex(eval, fit_min, mid_point);
+                fitted_params<FLT_T> right_fit = fit_ensemble_binary_convex(eval, mid_point, fit_max);
                 return left_fit < right_fit ? left_fit : right_fit;
             }
 
@@ -301,13 +360,13 @@ namespace resaxs
                 fitted_params<FLT_T> mid_point = fit_ensemble(eval, fit_min.exp_factor_ + ef_delta / 2, fit_min.water_weight_);
 
                 if (fit_min > mid_point && mid_point > fit_max)
-                    return fit_ensemble(eval, mid_point, fit_max);
+                return fit_ensemble_binary_convex(eval, mid_point, fit_max);
 
                 if (fit_min < mid_point && mid_point < fit_max)
-                    return fit_ensemble(eval, fit_min, mid_point);
+                return fit_ensemble_binary_convex(eval, fit_min, mid_point);
 
-                fitted_params<FLT_T> left_fit = fit_ensemble(eval, fit_min, mid_point);
-                fitted_params<FLT_T> right_fit = fit_ensemble(eval, mid_point, fit_max);
+                fitted_params<FLT_T> left_fit = fit_ensemble_binary_convex(eval, fit_min, mid_point);
+                fitted_params<FLT_T> right_fit = fit_ensemble_binary_convex(eval, mid_point, fit_max);
                 return left_fit < right_fit ? left_fit : right_fit;
             }
 
@@ -321,26 +380,18 @@ namespace resaxs
 
             fitted_params<FLT_T> bad_fit;
 
-            fitted_params<FLT_T> sw_fit = contains({ fit_min, w_mid_point, mid_point, s_mid_point }, min_point) ? fit_ensemble(eval, fit_min, mid_point) : bad_fit;
-            fitted_params<FLT_T> nw_fit = contains({ w_mid_point, mid_point, n_mid_point }, min_point) ? fit_ensemble(eval, w_mid_point, n_mid_point) : bad_fit;
-            fitted_params<FLT_T> ne_fit = contains({ fit_max, n_mid_point, mid_point, e_mid_point }, min_point) ? fit_ensemble(eval, mid_point, fit_max) : bad_fit;
-            fitted_params<FLT_T> se_fit = contains({ s_mid_point, mid_point, e_mid_point }, min_point) ? fit_ensemble(eval, s_mid_point, e_mid_point) : bad_fit;
+            fitted_params<FLT_T> sw_fit = contains({ fit_min, w_mid_point, mid_point, s_mid_point }, min_point) ? fit_ensemble_binary_convex(eval, fit_min, mid_point) : bad_fit;
+            fitted_params<FLT_T> nw_fit = contains({ w_mid_point, mid_point, n_mid_point }, min_point) ? fit_ensemble_binary_convex(eval, w_mid_point, n_mid_point) : bad_fit;
+            fitted_params<FLT_T> ne_fit = contains({ fit_max, n_mid_point, mid_point, e_mid_point }, min_point) ? fit_ensemble_binary_convex(eval, mid_point, fit_max) : bad_fit;
+            fitted_params<FLT_T> se_fit = contains({ s_mid_point, mid_point, e_mid_point }, min_point) ? fit_ensemble_binary_convex(eval, s_mid_point, e_mid_point) : bad_fit;
 
             return std::min({ sw_fit, nw_fit, ne_fit, se_fit });
+        }
 
-            /*fitted_params<FLT_T> mid_point = fit_ensemble(eval, fit_min.water_weight_ + ww_delta / 2);
-
-            if (fit_min > mid_point && mid_point > fit_max)
-                return fit_ensemble(eval, mid_point, fit_max);
-
-            if (fit_min < mid_point && mid_point < fit_max)
-                return fit_ensemble(eval, fit_min, mid_point);
-
-            fitted_params<FLT_T> left_fit = fit_ensemble(eval, fit_min, mid_point);
-            fitted_params<FLT_T> right_fit = fit_ensemble(eval, mid_point, fit_max);
-            return left_fit < right_fit ? left_fit : right_fit;*/
-       }
-
+        /// Evaluate the ensemble with the specified params and fit the scale.
+        /// \param[in] eval SAXS evaluator object
+        /// \param[in] exp_factor Expansion factor
+        /// \param[in] water_weight Weight of the water layer
         template <typename CALC_T>
         fitted_params<FLT_T> fit_ensemble(CALC_T & eval, FLT_T exp_factor, FLT_T water_weight)
         {
@@ -357,76 +408,98 @@ namespace resaxs
             fit_params.scale_ = params_.scale_.fit() ? params_.ref_profile_.optimize_scale_for(fit_params.intensity_) : params_.scale_;
             fit_params.intensity_ *= fit_params.scale_;
 
-            fit_params.chi2_ = params_.ref_profile_.chi_square(fit_params.intensity_);
+            fit_params.chi_ = params_.ref_profile_.chi_square_chi(fit_params.intensity_);
 
             return fit_params;
         }
 
+        /// Fit the ensemble parameters by a grid search of the (assumed convex) solution space.
+        /// \param[in] eval SAXS evaluator object
         template <typename CALC_T>
-        fitted_params<FLT_T> fit_ensemble1(CALC_T & eval)
+        fitted_params<FLT_T> fit_ensemble(CALC_T & eval)
         {
             if (verbose_lvl_ >= NORMAL)
                 cout << "Calculating ensemble average for " << v_models_.size() << " conformations.\n";
 
             eval.params_.ref_profile_.initialize(v_q_);
 
+            constexpr FLT_T ef_range_min = FLT_T(0.95);
+            constexpr FLT_T ef_range_max = FLT_T(1.05);
+            constexpr FLT_T ww_range_min = FLT_T(-2.0);
+            constexpr FLT_T ww_range_max = FLT_T(4.0);
+
+            constexpr FLT_T ef_epsilon = FLT_T(0.0001);
+            constexpr FLT_T ww_epsilon = FLT_T(0.001);
+            constexpr FLT_T chi_threshold = FLT_T(0.00001);
+
+            const unsigned int default_grid_slices = 5;
+            const unsigned int first_round_grid_slices = 5;
+            const unsigned int fixed_value_slices = 1;
+
+            // define the search space and how it will be sliced up
+            unsigned int ef_grid_slices = params_.exp_factor_.fit() ? first_round_grid_slices : fixed_value_slices;
+            FLT_T ef_min = params_.exp_factor_.fit() ? ef_range_min : params_.exp_factor_;
+            FLT_T ef_max = params_.exp_factor_.fit() ? ef_range_max : params_.exp_factor_;
+            FLT_T ef_delta;
+            unsigned int ww_grid_slices = params_.water_weight_.fit() ? first_round_grid_slices : fixed_value_slices;
+            FLT_T ww_min = params_.water_weight_.fit() ? ww_range_min : params_.water_weight_;
+            FLT_T ww_max = params_.water_weight_.fit() ? ww_range_max : params_.water_weight_;
+            FLT_T ww_delta;
+
             fitted_params<FLT_T> best_params;
-            FLT_T prev_chi2 = best_params.chi2_;
-
-            const unsigned int default_slices = 4;
-            const unsigned int fixed_value_slices = 0;
-            unsigned int ef_slices = params_.exp_factor_.fit() ? default_slices : fixed_value_slices;
-            FLT_T min_c1 = params_.exp_factor_.fit() ? FLT_T(0.95) : params_.exp_factor_;
-            FLT_T max_c1 = params_.exp_factor_.fit() ? FLT_T(1.05) : params_.exp_factor_;
-            FLT_T delta_c1 = (max_c1 - min_c1) / ef_slices;
-            unsigned int ww_slices = params_.water_weight_.fit() ? default_slices : fixed_value_slices;
-            FLT_T min_c2 = params_.water_weight_.fit() ? FLT_T(-2.0) : params_.water_weight_;
-            FLT_T max_c2 = params_.water_weight_.fit() ? FLT_T(4.0) : params_.water_weight_;
-            FLT_T delta_c2 = (max_c2 - min_c2) / ww_slices;
-
-            // adjust starting range to include endpoints
-            min_c2 -= delta_c2;
-            max_c2 += delta_c2;
-            ww_slices += 2;
-
-            eval.params_.exp_factor_.fix(params_.exp_factor_);
-
-            int count = 0;
+            FLT_T prev_round_chi = best_params.chi_;
+            bool chi_threshold_reached = false;
             do
             {
-                for (unsigned int j = 1; j < ww_slices; ++j)
+                prev_round_chi = best_params.chi_;
+                ef_delta = (ef_max - ef_min) / ef_grid_slices;
+                ww_delta = (ww_max - ww_min) / ww_grid_slices;
+
+                // sample a sparse square grid from min to max values
+                for (unsigned int i = 0; i <= ef_grid_slices; ++i)
                 {
-                    FLT_T c2 = min_c2 + j * delta_c2;
-
-                    fitted_params<FLT_T> new_params = fit_ensemble(eval, c2);
-                    ++count;
-                    if (new_params.chi2_ < best_params.chi2_)
+                    FLT_T prev_pt_chi = std::numeric_limits<FLT_T>::max();
+                    for (unsigned int j = 0; j <= ww_grid_slices; ++j)
                     {
-                        FLT_T prev_chi2 = best_params.chi2_;
+                        fitted_params<FLT_T> new_params = fit_ensemble(eval, ef_min + i * ef_delta, ww_min + j * ww_delta);
 
-                        best_params = std::move(new_params);
-                        cout << "found min: " << best_params;
-                        if (std::fabs(std::sqrt(best_params.chi2_) - std::sqrt(prev_chi2)) / std::sqrt(prev_chi2) < 0.0001)
-                        {
-                            delta_c1 = delta_c2 = 0;
+                        // if we are getting away from the minimum, skip the rest of the points along this line
+                        if (prev_pt_chi < new_params.chi_)
                             break;
-                        }
+                        prev_pt_chi = new_params.chi_;
+
+                        if (new_params < best_params)
+                            best_params = std::move(new_params);
                     }
                 }
 
-                ww_slices = default_slices;     // reset slices to exclude endpoints
-                min_c2 = std::max(best_params.water_weight_ - delta_c2, FLT_T(-2.0));
-                max_c2 = std::min(best_params.water_weight_ + delta_c2, FLT_T(4.0));
-                delta_c2 = (max_c2 - min_c2) / ww_slices;
-            } while (delta_c2 > 0.001);
+                if (verbose_lvl_ >= DETAILS && best_params.chi_ < prev_round_chi)
+                    cout << "found min: " << best_params;
 
-            cout << count << " SAXS evals." << endl;
+                // update slices and deltas for the next round
+                ef_grid_slices = ef_delta > ef_epsilon ? default_grid_slices : fixed_value_slices;
+                ww_grid_slices = ww_delta > ww_epsilon ? default_grid_slices : fixed_value_slices;
+                ef_delta = clamp_to_zero(ef_delta, ef_epsilon);
+                ww_delta = clamp_to_zero(ww_delta, ww_epsilon);
+
+                // search space for next round is +/-delta around the current minimum
+                ef_min = std::max(best_params.exp_factor_ - ef_delta, ef_range_min);
+                ef_max = std::min(best_params.exp_factor_ + ef_delta, ef_range_max);
+                ww_min = std::max(best_params.water_weight_ - ww_delta, ww_range_min);
+                ww_max = std::min(best_params.water_weight_ + ww_delta, ww_range_max);
+
+                auto chi_delta = std::fabs(prev_round_chi - best_params.chi_);
+                chi_threshold_reached = chi_delta / prev_round_chi < chi_threshold && chi_delta < 0.0001;
+            } while ((ef_delta > ef_epsilon || ww_delta > ww_epsilon) && !chi_threshold_reached);
+
+            if (verbose_lvl_ >= DETAILS)
+                cout << eval.calc_count << " calculations." << endl;
 
             return best_params;
         }
 
-        /// compute the ensemble average using the supplied evaluator and current parameters.
-        ///
+        /// Compute the ensemble average using the supplied evaluator and current parameters.
+        /// \param[in] eval SAXS evaluator object
         template <typename CALC_T>
         std::vector<FLT_T> avg_ensemble(CALC_T & eval) const
         {
