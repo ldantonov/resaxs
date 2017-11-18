@@ -27,6 +27,7 @@
 #include <memory>
 #include <cassert>
 #include <initializer_list>
+#include <type_traits>
 #include "resaxs.hpp"
 #include "utils.hpp"
 #include "host_debye.hpp"
@@ -412,6 +413,94 @@ namespace resaxs
 
             return fit_params;
         }
+
+        /// Fit the ensemble parameters by a grid search of the (assumed convex) solution space.
+        /// \param[in] eval SAXS evaluator object
+/*        template <typename CALC_T>
+        fitted_params<FLT_T> fit_ensemble1(CALC_T & eval)
+        {
+            if (verbose_lvl_ >= NORMAL)
+                cout << "Calculating ensemble average for " << v_models_.size() << " conformations.\n";
+
+            eval.params_.ref_profile_.initialize(v_q_);
+
+            constexpr FLT_T ef_range_min = FLT_T(0.95);
+            constexpr FLT_T ef_range_max = FLT_T(1.05);
+            constexpr FLT_T ww_range_min = FLT_T(-2.0);
+            constexpr FLT_T ww_range_max = FLT_T(4.0);
+
+            constexpr FLT_T ef_epsilon = FLT_T(0.0001);
+            constexpr FLT_T ww_epsilon = FLT_T(0.001);
+            constexpr FLT_T chi_threshold = FLT_T(0.00001);
+
+
+            constexpr FLT_T x0_e = (ef_range_max - ef_range_min) / 2;
+            constexpr FLT_T x0_w = (ww_range_max - ww_range_min) / 2;
+            constexpr FLT_T c = 1;
+
+            constexpr FLT_T b = c * (std::sqrt(3) - 1) / (2 * std::sqrt(2));
+            constexpr FLT_T a = b + c / std::sqrt(2);
+
+            FLT_T x1_e = x0_e + a;
+            FLT_T x1_w = x0_w + b;
+            FLT_T x2_e = x0_e + b;
+            FLT_T x2_w = x0_w + a;
+
+
+
+
+
+            fitted_params<FLT_T> best_params;
+            FLT_T prev_round_chi = best_params.chi_;
+            bool chi_threshold_reached = false;
+            do
+            {
+                prev_round_chi = best_params.chi_;
+                ef_delta = (ef_max - ef_min) / ef_grid_slices;
+                ww_delta = (ww_max - ww_min) / ww_grid_slices;
+
+                // sample a sparse square grid from min to max values
+                for (unsigned int i = 0; i <= ef_grid_slices; ++i)
+                {
+                    FLT_T prev_pt_chi = std::numeric_limits<FLT_T>::max();
+                    for (unsigned int j = 0; j <= ww_grid_slices; ++j)
+                    {
+                        fitted_params<FLT_T> new_params = fit_ensemble(eval, ef_min + i * ef_delta, ww_min + j * ww_delta);
+
+                        // if we are getting away from the minimum, skip the rest of the points along this line
+                        if (prev_pt_chi < new_params.chi_)
+                            break;
+                        prev_pt_chi = new_params.chi_;
+
+                        if (new_params < best_params)
+                            best_params = std::move(new_params);
+                    }
+                }
+
+                if (verbose_lvl_ >= DETAILS && best_params.chi_ < prev_round_chi)
+                    cout << "found min: " << best_params;
+
+                // update slices and deltas for the next round
+                ef_grid_slices = ef_delta > ef_epsilon ? default_grid_slices : fixed_value_slices;
+                ww_grid_slices = ww_delta > ww_epsilon ? default_grid_slices : fixed_value_slices;
+                ef_delta = clamp_to_zero(ef_delta, ef_epsilon);
+                ww_delta = clamp_to_zero(ww_delta, ww_epsilon);
+
+                // search space for next round is +/-delta around the current minimum
+                ef_min = std::max(best_params.exp_factor_ - ef_delta, ef_range_min);
+                ef_max = std::min(best_params.exp_factor_ + ef_delta, ef_range_max);
+                ww_min = std::max(best_params.water_weight_ - ww_delta, ww_range_min);
+                ww_max = std::min(best_params.water_weight_ + ww_delta, ww_range_max);
+
+                auto chi_delta = std::fabs(prev_round_chi - best_params.chi_);
+                chi_threshold_reached = chi_delta / prev_round_chi < chi_threshold && chi_delta < 0.0001;
+            } while ((ef_delta > ef_epsilon || ww_delta > ww_epsilon) && !chi_threshold_reached);
+
+            if (verbose_lvl_ >= DETAILS)
+                cout << eval.calc_count << " calculations." << endl;
+
+            return best_params;
+        }*/
 
         /// Fit the ensemble parameters by a grid search of the (assumed convex) solution space.
         /// \param[in] eval SAXS evaluator object
