@@ -39,8 +39,8 @@ namespace resaxs
 
     /// Enhanced operations for std::vector
     template <typename T, typename U,
-        typename = std::enable_if<std::is_arithmetic<T>::value>::type,
-        typename = std::enable_if<std::is_arithmetic<U>::value>::type>
+        typename = typename std::enable_if<std::is_arithmetic<T>::value>::type,
+        typename = typename std::enable_if<std::is_arithmetic<U>::value>::type>
         inline std::vector<T> & operator*=(std::vector<T> & v, U c)
     {
         for (auto & e : v)
@@ -49,8 +49,8 @@ namespace resaxs
     }
 
     template <typename T, typename U,
-        typename = std::enable_if<std::is_arithmetic<T>::value>::type,
-        typename = std::enable_if<std::is_arithmetic<U>::value>::type>
+        typename = typename std::enable_if<std::is_arithmetic<T>::value>::type,
+        typename = typename std::enable_if<std::is_arithmetic<U>::value>::type>
         inline std::vector<T> & operator/=(std::vector<T> & v, U c)
     {
         for (auto & e : v)
@@ -58,7 +58,7 @@ namespace resaxs
         return v;
     }
 
-    template <typename T, typename = std::enable_if<std::is_arithmetic<T>::value>::type>
+    template <typename T, typename = typename std::enable_if<std::is_arithmetic<T>::value>::type>
     inline std::vector<T> & operator+=(std::vector<T> & v1, const std::vector<T> & v2)
     {
         for (auto i = 0U; i < v1.size(); ++i)
@@ -75,7 +75,7 @@ namespace resaxs
     }
 
     /// If the value falls below the low threshold clamp it down to zero.
-    template <typename T, typename = std::enable_if<std::is_arithmetic<T>::value>::type>
+    template <typename T, typename = typename std::enable_if<std::is_arithmetic<T>::value>::type>
     constexpr T clamp_to_zero(T value, T lo)
     {
         return value > lo ? value : 0;
