@@ -109,7 +109,7 @@ public:
                 continue;
 
             FLT_T q_elem, iq_elem, error_elem;
-            istringstream line_s(line);
+            std::istringstream line_s(line);
             line_s >> q_elem >> iq_elem;
             // skip misformed lines
             if (!line_s)
