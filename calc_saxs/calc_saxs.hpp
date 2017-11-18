@@ -414,7 +414,7 @@ namespace resaxs
             fit_params.intensity_ = avg_ensemble(eval);
 
             // fit the scale parameter, if needed, and scale the intensity
-            fit_params.scale_ = params_.scale_.fit() ? params_.ref_profile_.optimize_scale_for(fit_params.intensity_) : params_.scale_;
+            fit_params.scale_ = params_.scale_.fit() ? params_.ref_profile_.optimize_scale_for(fit_params.intensity_) : FLT_T(params_.scale_);
             fit_params.intensity_ *= fit_params.scale_;
 
             fit_params.chi_ = params_.ref_profile_.chi_square_chi(fit_params.intensity_);
