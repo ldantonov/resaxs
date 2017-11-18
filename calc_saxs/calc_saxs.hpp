@@ -151,15 +151,15 @@ namespace resaxs
             return !operator <(other);
         }
 
-        template <typename FLT_T>
-        friend std::ostream & operator <<(std::ostream & os, const fitted_params<FLT_T> & params);
+        template <typename T>
+        friend std::ostream & operator <<(std::ostream & os, const fitted_params<T> & params);
     };
 
-    template <typename FLT_T>
-    inline std::ostream & operator <<(std::ostream & os, const fitted_params<FLT_T> & params)
+    template <typename T>
+    inline std::ostream & operator <<(std::ostream & os, const fitted_params<T> & params)
     {
         os << "# scale: " << params.scale_ << ", water weight: " << params.water_weight_
-            << ", expansion factor: " << params.exp_factor_ << ", Chi: " << params.chi_ << endl;
+            << ", expansion factor: " << params.exp_factor_ << ", Chi: " << params.chi_ << std::endl;
         return os;
     }
 
