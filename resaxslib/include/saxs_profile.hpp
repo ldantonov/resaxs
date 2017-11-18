@@ -23,6 +23,7 @@
 #include <algorithm>
 #include <random>
 #include <fstream>
+#include <sstream>
 
 #define SAXS_PROFILE_FILE_NOT_FOUND     -1101
 
