@@ -148,7 +148,7 @@ namespace algorithm {
             neighbors1.clear();
             neighbors2.clear();
             const auto &end_it = grid.end(ui);  // let's not create this more than once
-            for (auto & it = grid.begin(li, ui); it != end_it; ++it)
+            for (auto it = grid.begin(li, ui); it != end_it; ++it)
             {
                 for (const auto pt_idx : *it)
                 {
