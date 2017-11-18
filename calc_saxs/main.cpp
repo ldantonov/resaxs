@@ -234,7 +234,8 @@ int main(int argc, char ** argv)
                 calc.host_saxs();
             else
             {
-                best_params = calc.fit_ensemble(calc_cl_saxs<float>(algorithm::saxs_enum::saxs_gpu_pt_wf, device, 64));
+                calc_cl_saxs<float> evaluator(algorithm::saxs_enum::saxs_gpu_pt_wf, device, 64);
+                best_params = calc.fit_ensemble(evaluator);
                 calc.intensity_ = best_params.intensity_; // TODO: remove usage of calc.intensity_;
             }
             
