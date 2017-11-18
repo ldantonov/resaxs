@@ -22,6 +22,7 @@
 #include <vector>
 #include <algorithm>
 #include <random>
+#include <fstream>
 
 #define SAXS_PROFILE_FILE_NOT_FOUND     -1101
 
