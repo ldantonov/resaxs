@@ -276,7 +276,7 @@ void calc_saxs<FLT_T>::load_pdb(const string & filename)
 
 /// Load atomic models from a PDB file.
 template <typename FLT_T>
-decltype(auto) calc_saxs<FLT_T>::load_pdb_atomic(const string & filename) const
+auto calc_saxs<FLT_T>::load_pdb_atomic(const string & filename) const -> vector<vector<real4>>
 {
     parse_pdb<FLT_T> parser(filename);
     parser.set_verbose_level(typename decltype(parser)::verbose_levels(verbose_lvl_));

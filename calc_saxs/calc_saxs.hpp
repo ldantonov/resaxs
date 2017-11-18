@@ -621,7 +621,7 @@ namespace resaxs
         void parse_bodies(const std::string & filename);
 #endif
         void load_pdb(const std::string & filename);
-        decltype(auto) load_pdb_atomic(const std::string & filename) const;
+        auto load_pdb_atomic(const std::string & filename) const -> std::vector<std::vector<real4>>;
         void load_pdb_atomic(const std::vector<std::string> & filenames);
 
         calc_params<FLT_T> params_;
