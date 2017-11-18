@@ -88,7 +88,7 @@ namespace resaxs
         profile_param(FLT_T value, bool fit = false) : value_(value), fit_(fit) {}
         profile_param(const profile_param &) = default;
 
-        operator const FLT_T () const { return value_; }
+        operator FLT_T () const { return value_; }
         bool fit() const { return fit_; }
 
         void fix(FLT_T value) { value_ = value; fit_ = false; }
