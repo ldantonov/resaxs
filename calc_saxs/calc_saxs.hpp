@@ -260,7 +260,7 @@ namespace resaxs
         fitted_params<FLT_T> fit_ensemble_binary(CALC_T & eval)
         {
             if (verbose_lvl_ >= NORMAL)
-                cout << "Calculating ensemble average for " << v_models_.size() << " conformations.\n";
+                std::cout << "Calculating ensemble average for " << v_models_.size() << " conformations.\n";
 
             eval.params_.ref_profile_.initialize(v_q_);
 
@@ -274,7 +274,7 @@ namespace resaxs
 
             fitted_params<FLT_T> best_params = fit_ensemble_binary_convex(eval, fit_min, fit_max);
 
-            cout << eval.calc_count << " calculations." << endl;
+            std::cout << eval.calc_count << " calculations." << endl;
 
             return best_params;
         }
@@ -290,7 +290,7 @@ namespace resaxs
             auto chi_delta = std::fabs(fit_min.chi_ - fit_max.chi_) / fit_max.chi_;
             if (ef_delta < 0.0001 && ww_delta < 0.001 || chi_delta < 0.0001)
             {
-                cout << "found min: " << (fit_min < fit_max ? fit_min : fit_max);
+                std::cout << "found min: " << (fit_min < fit_max ? fit_min : fit_max);
                 return fit_min < fit_max ? fit_min : fit_max;
             }
 
@@ -337,7 +337,7 @@ namespace resaxs
             auto chi_delta = std::fabs(fit_min.chi_ - fit_max.chi_) / fit_max.chi_;
             if (ef_delta < 0.0001 && ww_delta < 0.001 || chi_delta < 0.0001)
             {
-                cout << "found min: " << (fit_min < fit_max ? fit_min : fit_max);
+                std::cout << "found min: " << (fit_min < fit_max ? fit_min : fit_max);
                 return fit_min < fit_max ? fit_min : fit_max;
             }
 
@@ -420,7 +420,7 @@ namespace resaxs
         fitted_params<FLT_T> fit_ensemble1(CALC_T & eval)
         {
             if (verbose_lvl_ >= NORMAL)
-                cout << "Calculating ensemble average for " << v_models_.size() << " conformations.\n";
+                std::cout << "Calculating ensemble average for " << v_models_.size() << " conformations.\n";
 
             eval.params_.ref_profile_.initialize(v_q_);
 
@@ -478,7 +478,7 @@ namespace resaxs
                 }
 
                 if (verbose_lvl_ >= DETAILS && best_params.chi_ < prev_round_chi)
-                    cout << "found min: " << best_params;
+                    std::cout << "found min: " << best_params;
 
                 // update slices and deltas for the next round
                 ef_grid_slices = ef_delta > ef_epsilon ? default_grid_slices : fixed_value_slices;
@@ -497,7 +497,7 @@ namespace resaxs
             } while ((ef_delta > ef_epsilon || ww_delta > ww_epsilon) && !chi_threshold_reached);
 
             if (verbose_lvl_ >= DETAILS)
-                cout << eval.calc_count << " calculations." << endl;
+                std::cout << eval.calc_count << " calculations." << endl;
 
             return best_params;
         }*/
@@ -508,7 +508,7 @@ namespace resaxs
         fitted_params<FLT_T> fit_ensemble(CALC_T & eval)
         {
             if (verbose_lvl_ >= NORMAL)
-                cout << "Calculating ensemble average for " << v_models_.size() << " conformations.\n";
+                std::cout << "Calculating ensemble average for " << v_models_.size() << " conformations.\n";
 
             eval.params_.ref_profile_.initialize(v_q_);
 
@@ -563,7 +563,7 @@ namespace resaxs
                 }
 
                 if (verbose_lvl_ >= DETAILS && best_params.chi_ < prev_round_chi)
-                    cout << "found min: " << best_params;
+                    std::cout << "found min: " << best_params;
 
                 // update slices and deltas for the next round
                 ef_grid_slices = ef_delta > ef_epsilon ? default_grid_slices : fixed_value_slices;
@@ -582,7 +582,7 @@ namespace resaxs
             } while ((ef_delta > ef_epsilon || ww_delta > ww_epsilon) && !chi_threshold_reached);
 
             if (verbose_lvl_ >= DETAILS)
-                cout << eval.calc_count << " calculations." << endl;
+                std::cout << eval.calc_count << " calculations." << endl;
 
             return best_params;
         }
