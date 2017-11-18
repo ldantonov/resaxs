@@ -113,7 +113,7 @@ public:
 ///     arg             - command line argument
 ///     fit_filename    - command line argument for the intensity file to use for fitting
 template <typename FLT_T>
-typename profile_param<FLT_T> make_param(const TCLAP::ValueArg<float> & arg, const TCLAP::ValueArg<string> & fit_filename)
+profile_param<FLT_T> make_param(const TCLAP::ValueArg<float> & arg, const TCLAP::ValueArg<string> & fit_filename)
 {
     return { const_cast<TCLAP::ValueArg<float> &>(arg).getValue(), !arg.isSet() && !const_cast<TCLAP::ValueArg<string> &>(fit_filename).getValue().empty() };
 };
