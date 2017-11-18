@@ -88,7 +88,7 @@ namespace resaxs
         profile_param(FLT_T value, bool fit = false) : value_(value), fit_(fit) {}
         profile_param(const profile_param &) = default;
 
-        operator FLT_T () const { return value_; }
+        operator const FLT_T () const { return value_; }
         bool fit() const { return fit_; }
 
         void fix(FLT_T value) { value_ = value; fit_ = false; }
@@ -535,12 +535,12 @@ namespace resaxs
 
             // define the search space and how it will be sliced up
             unsigned int ef_grid_slices = params_.exp_factor_.fit() ? first_round_grid_slices : fixed_value_slices;
-            FLT_T ef_min = params_.exp_factor_.fit() ? ef_range_min : params_.exp_factor_;
-            FLT_T ef_max = params_.exp_factor_.fit() ? ef_range_max : params_.exp_factor_;
+            FLT_T ef_min = params_.exp_factor_.fit() ? ef_range_min : FLT_T(params_.exp_factor_);
+            FLT_T ef_max = params_.exp_factor_.fit() ? ef_range_max : FLT_T(params_.exp_factor_);
             FLT_T ef_delta;
             unsigned int ww_grid_slices = params_.water_weight_.fit() ? first_round_grid_slices : fixed_value_slices;
-            FLT_T ww_min = params_.water_weight_.fit() ? ww_range_min : params_.water_weight_;
-            FLT_T ww_max = params_.water_weight_.fit() ? ww_range_max : params_.water_weight_;
+            FLT_T ww_min = params_.water_weight_.fit() ? ww_range_min : FLT_T(params_.water_weight_);
+            FLT_T ww_max = params_.water_weight_.fit() ? ww_range_max : FLT_T(params_.water_weight_);
             FLT_T ww_delta;
 
             fitted_params<FLT_T> best_params;
