@@ -102,6 +102,14 @@ namespace resaxs
     struct calc_params
     {
     public:
+        /// TODO: remove this section once we move to GCC 5+, for C++14 support
+        calc_params() = default;
+        calc_params(const profile_param<FLT_T> & scale, const profile_param<FLT_T> & water_weight, const profile_param<FLT_T> & exp_factor,
+            saxs_profile<FLT_T> && ref_profile) : scale_(scale), water_weight_(water_weight), exp_factor_(exp_factor), ref_profile_(std::move(ref_profile)) {}
+        calc_params(const profile_param<FLT_T> & scale, const profile_param<FLT_T> & water_weight, const profile_param<FLT_T> & exp_factor,
+            const saxs_profile<FLT_T> & ref_profile) : calc_params(scale, water_weight, exp_factor, saxs_profile<FLT_T>(ref_profile)) {}
+        /// end of section
+
         profile_param<FLT_T> scale_ = { 1, false };           // scale of the profile relative to the reference
         profile_param<FLT_T> water_weight_ = { 0, false };    // weight parameter for the water layer
         profile_param<FLT_T> exp_factor_ = { 1, false };      // expansion factor parameter for the excluded volume
