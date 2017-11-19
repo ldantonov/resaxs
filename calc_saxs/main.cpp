@@ -154,6 +154,7 @@ int main(int argc, char ** argv)
         cmd.add(fit_filename);
 
         TCLAP::ValueArg<float> scale("s", "scale", "SAXS profile intensity scale.", false, 1.0, "floating-point value");
+        cmd.add(scale);
 
         water_weight_range ww_range;
         TCLAP::ValueArg<float> water_weight("w", "water", "Weight of the water layer contribution.", false, 0, &ww_range);
