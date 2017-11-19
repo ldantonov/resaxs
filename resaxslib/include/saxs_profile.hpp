@@ -19,6 +19,9 @@
 //
 ///////////////////////////////////////////////////////////////////////////////
 
+#ifndef RE_SAXS_PROFILE_HPP
+#define RE_SAXS_PROFILE_HPP
+
 #include <vector>
 #include <algorithm>
 #include <random>
@@ -183,3 +186,5 @@ private:
 };
 
 }
+
+#endif // RE_SAXS_PROFILE_HPP
