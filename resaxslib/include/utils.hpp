@@ -107,6 +107,16 @@ atoms::atom_type map_pdb_atom_to_ff_type(atoms::atom_type element, const std::st
 //
 std::string trim(const std::string& str);
 
+//
+// Trim leading and trailing characters from a string
+//
+std::string trim(const std::string& str, const std::string& delim);
+
+///
+/// Split a string at a specified delimiter, returning a vector of strings
+///
+std::vector<std::string> split(const std::string &s, char delim);
+
 } // namespace
 
 #endif // RESAXS_UTILS_HPP

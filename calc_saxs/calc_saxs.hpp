@@ -85,17 +85,33 @@ namespace resaxs
     struct profile_param
     {
     public:
-        profile_param(FLT_T value, bool fit = false) : value_(value), fit_(fit) {}
+        profile_param() : lo_(std::numeric_limits<FLT_T>::min()), hi_(std::numeric_limits<FLT_T>::max()), fit_(true) {}
+        profile_param(FLT_T lo, FLT_T hi) : lo_(lo), hi_(hi), fit_(true)
+        {
+            if (lo_ == hi_)
+                fit_ = false;
+            if (lo_ > hi_)
+            {
+                // still a valid range, if we switch the values
+                lo_ = hi;
+                hi_ = lo;
+            }
+        }
+        profile_param(FLT_T value) : lo_(value), hi_(value), fit_(false) {}
         profile_param(const profile_param &) = default;
 
-        operator const FLT_T () const { return value_; }
-        bool fit() const { return fit_; }
+        profile_param & operator =(const profile_param &) = default;
 
-        void fix(FLT_T value) { value_ = value; fit_ = false; }
+        bool fit() const { return fit_; }
+        FLT_T lo() const { return lo_; }
+        FLT_T hi() const { return hi_; }
+
+        void fix(FLT_T value) { lo_ = hi_ = value; fit_ = false; }
 
     private:
         bool fit_;
-        FLT_T value_;
+        FLT_T lo_;
+        FLT_T hi_;
     };
 
     template <typename FLT_T>
@@ -237,8 +253,8 @@ namespace resaxs
         {
             auto & saxs_params = saxs_alg_->access_params();
             auto & water_params = saxs_params.get_implicit_water_params();
-            water_params.set_water_weight(params_.water_weight_);
-            saxs_params.get_ff_params().set_expansion_factor(params_.exp_factor_);
+            water_params.set_water_weight(params_.water_weight_.lo());
+            saxs_params.get_ff_params().set_expansion_factor(params_.exp_factor_.lo());
         }
     };
 
@@ -414,7 +430,7 @@ namespace resaxs
             fit_params.intensity_ = avg_ensemble(eval);
 
             // fit the scale parameter, if needed, and scale the intensity
-            fit_params.scale_ = params_.scale_.fit() ? params_.ref_profile_.optimize_scale_for(fit_params.intensity_) : FLT_T(params_.scale_);
+            fit_params.scale_ = params_.scale_.fit() ? params_.ref_profile_.optimize_scale_for(fit_params.intensity_) : params_.scale_.lo();
             fit_params.intensity_ *= fit_params.scale_;
 
             fit_params.chi_ = params_.ref_profile_.chi_square_chi(fit_params.intensity_);
@@ -520,27 +536,22 @@ namespace resaxs
 
             eval.params_.ref_profile_.initialize(v_q_);
 
-            constexpr FLT_T ef_range_min = FLT_T(0.95);
-            constexpr FLT_T ef_range_max = FLT_T(1.05);
-            constexpr FLT_T ww_range_min = FLT_T(-2.0);
-            constexpr FLT_T ww_range_max = FLT_T(4.0);
-
             constexpr FLT_T ef_epsilon = FLT_T(0.0001);
             constexpr FLT_T ww_epsilon = FLT_T(0.001);
             constexpr FLT_T chi_threshold = FLT_T(0.00001);
 
             const unsigned int default_grid_slices = 5;
             const unsigned int first_round_grid_slices = 5;
-            const unsigned int fixed_value_slices = 1;
+            const unsigned int fixed_value_slices = 0;
 
             // define the search space and how it will be sliced up
             unsigned int ef_grid_slices = params_.exp_factor_.fit() ? first_round_grid_slices : fixed_value_slices;
-            FLT_T ef_min = params_.exp_factor_.fit() ? ef_range_min : FLT_T(params_.exp_factor_);
-            FLT_T ef_max = params_.exp_factor_.fit() ? ef_range_max : FLT_T(params_.exp_factor_);
+            FLT_T ef_min = params_.exp_factor_.lo();
+            FLT_T ef_max = params_.exp_factor_.hi();
             FLT_T ef_delta;
             unsigned int ww_grid_slices = params_.water_weight_.fit() ? first_round_grid_slices : fixed_value_slices;
-            FLT_T ww_min = params_.water_weight_.fit() ? ww_range_min : FLT_T(params_.water_weight_);
-            FLT_T ww_max = params_.water_weight_.fit() ? ww_range_max : FLT_T(params_.water_weight_);
+            FLT_T ww_min = params_.water_weight_.lo();
+            FLT_T ww_max = params_.water_weight_.hi();
             FLT_T ww_delta;
 
             fitted_params<FLT_T> best_params;
@@ -549,8 +560,8 @@ namespace resaxs
             do
             {
                 prev_round_chi = best_params.chi_;
-                ef_delta = (ef_max - ef_min) / ef_grid_slices;
-                ww_delta = (ww_max - ww_min) / ww_grid_slices;
+                ef_delta = (ef_max - ef_min) / std::max(ef_grid_slices, 1u);
+                ww_delta = (ww_max - ww_min) / std::max(ww_grid_slices, 1u);
 
                 // sample a sparse square grid from min to max values
                 for (unsigned int i = 0; i <= ef_grid_slices; ++i)
@@ -580,10 +591,10 @@ namespace resaxs
                 ww_delta = clamp_to_zero(ww_delta, ww_epsilon);
 
                 // search space for next round is +/-delta around the current minimum
-                ef_min = std::max(best_params.exp_factor_ - ef_delta, ef_range_min);
-                ef_max = std::min(best_params.exp_factor_ + ef_delta, ef_range_max);
-                ww_min = std::max(best_params.water_weight_ - ww_delta, ww_range_min);
-                ww_max = std::min(best_params.water_weight_ + ww_delta, ww_range_max);
+                ef_min = std::max(best_params.exp_factor_ - ef_delta, params_.exp_factor_.lo());
+                ef_max = std::min(best_params.exp_factor_ + ef_delta, params_.exp_factor_.hi());
+                ww_min = std::max(best_params.water_weight_ - ww_delta, params_.water_weight_.lo());
+                ww_max = std::min(best_params.water_weight_ + ww_delta, params_.water_weight_.hi());
 
                 auto chi_delta = std::fabs(prev_round_chi - best_params.chi_);
                 chi_threshold_reached = chi_delta / prev_round_chi < chi_threshold && chi_delta < 0.0001;

@@ -24,6 +24,7 @@
 #include <string>
 #include <sstream>
 #include <ctime>
+#include <regex>
 
 #include "utils.hpp"
 #include <tclap/CmdLine.h>
@@ -71,43 +72,82 @@ string getexepath()
 #endif
 
 
-class water_weight_range : public TCLAP::Constraint<float>
+struct water_weight_range
 {
-public:
-    virtual std::string description() const override
+    constexpr static float min_ = -2.0f;
+    constexpr static float max_ = 4.0f;
+    constexpr static float default_ = 0;
+};
+
+struct exp_factor_range
+{
+    constexpr static float min_ = 0.95f;
+    constexpr static float max_ = 1.05f;
+    constexpr static float default_ = 1;
+};
+
+template <typename RANGE>
+struct range_arg : public RANGE
+{
+    float lo_ = default_;
+    float hi_ = default_;
+
+    bool singular() const { return lo_ == hi_; }
+
+    string min_max_str() const
     {
-        return "[-2.0, 4.0]";
+        return string("[") + to_string(min_) + ',' + to_string(max_) + ']';
     }
 
-    virtual std::string shortID() const override
+    range_arg& operator=(const string& str)
     {
-        return description();
-    }
+        string s = trim(str, "[](){} ");
+        auto elems = split(s, ',');
 
-    virtual bool check(const float& value) const override
-    {
-        return value >= -2.0 && value <= 4.0;
+        if (elems.size() == 2)
+        {
+            // a range between two numbers
+            elems[0] = trim(elems[0]);
+            elems[1] = trim(elems[1]);
+            std::istringstream iss(elems[0]);
+            if (!(iss >> lo_))
+                throw TCLAP::ArgParseException(elems[0] + " is not a real number");
+            iss.seekg(0);
+            iss.str(elems[1]);
+            if (!(iss >> hi_))
+                throw TCLAP::ArgParseException(elems[1] + " is not a real number");
+            if (lo_ < min_ || hi_ > max_ || lo_ > hi_)
+                throw TCLAP::ArgParseException(s + " is not a valid range in " + min_max_str());
+        }
+        else if (elems.size() == 1)
+        {
+            // a single value
+            elems[0] = trim(elems[0]);
+            std::istringstream iss(elems[0]);
+            if (!(iss >> lo_))
+                throw TCLAP::ArgParseException(elems[0] + " is not a real number");
+            hi_ = lo_;
+            if (lo_ < min_ || hi_ > max_)
+                throw TCLAP::ArgParseException(elems[0] + " is not in the valid range " + min_max_str());
+        }
+        else
+            throw TCLAP::ArgParseException(s + " is not a real number or a valid range");
+
+        return *this;
     }
 };
 
-class expansion_range : public TCLAP::Constraint<float>
-{
-public:
-    virtual std::string description() const override
-    {
-        return "[0.95, 1.05]";
-    }
+namespace TCLAP {
 
-    virtual std::string shortID() const override
-    {
-        return description();
-    }
+    template<> struct ArgTraits<range_arg<water_weight_range>> {
+        typedef StringLike ValueCategory;
+    };
 
-    virtual bool check(const float& value) const override
-    {
-        return value >= 0.95 && value <= 1.05;
-    }
-};
+    template<> struct ArgTraits<range_arg<exp_factor_range>> {
+        typedef StringLike ValueCategory;
+    };
+
+}
 
 /// Create a profile_param out of command line arguments. The fit option will be set appropriately.
 ///     arg             - command line argument
@@ -115,9 +155,19 @@ public:
 template <typename FLT_T>
 profile_param<FLT_T> make_param(const TCLAP::ValueArg<float> & arg, const TCLAP::ValueArg<string> & fit_filename)
 {
-    return { const_cast<TCLAP::ValueArg<float> &>(arg).getValue(), !arg.isSet() && !const_cast<TCLAP::ValueArg<string> &>(fit_filename).getValue().empty() };
+    bool fit = !arg.isSet() && !const_cast<TCLAP::ValueArg<string> &>(fit_filename).getValue().empty();
+    return fit ? profile_param<FLT_T>() : profile_param<FLT_T>(const_cast<TCLAP::ValueArg<float> &>(arg).getValue());
 };
 
+template <typename FLT_T, typename RANGE>
+profile_param<FLT_T> make_param(const TCLAP::ValueArg<range_arg<RANGE>> & arg, const TCLAP::ValueArg<string> & fit_filename)
+{
+    const auto & value = const_cast<TCLAP::ValueArg<range_arg<RANGE>> &>(arg).getValue();
+
+    // if arg is default and there's a fit file, fit over the default range
+    bool default_range = !arg.isSet() && !const_cast<TCLAP::ValueArg<string> &>(fit_filename).getValue().empty();
+    return { default_range ? value.min_ : value.lo_, default_range ? value.max_ : value.hi_ };
+};
 
 int main(int argc, char ** argv)
 {
@@ -139,55 +189,49 @@ int main(int argc, char ** argv)
         verbose_choice.push_back("details");
         verbose_choice.push_back("debug");
         TCLAP::ValuesConstraint<string> verbose_constr(verbose_choice);
-        TCLAP::ValueArg<string> verbose_lvl("v", "verbose", "Verbosity level", false, "normal", &verbose_constr);
-        cmd.add(verbose_lvl);
+        TCLAP::ValueArg<string> verbose_lvl("v", "verbose", "Verbosity level", false, "normal", &verbose_constr, cmd);
 
         TCLAP::SwitchArg verify_res("t", "test", "Verify the results against the simple host standard.", false);
         cmd.add(verify_res);
 
         TCLAP::SwitchArg dp_alg("", "double", "Turn on double precision.", false);
         cmd.add(dp_alg);
-        TCLAP::ValueArg<string> dev_arg("d", "device", "OpenCL device to use", false, "cpu", "device descriptor: {platform-id}-{device-id}, e.g. 0-0; cpu; gpu");
-        cmd.add(dev_arg);
 
-        TCLAP::ValueArg<string> fit_filename("f", "fit", "Fit to experimental profile", false, "", "file name");
-        cmd.add(fit_filename);
+        TCLAP::ValueArg<string> dev_arg("d", "device", "OpenCL device to use", false, "cpu", "device descriptor: {platform-id}-{device-id}, e.g. 0-0; cpu; gpu", cmd);
 
-        TCLAP::ValueArg<float> scale("s", "scale", "SAXS profile intensity scale.", false, 1.0, "floating-point value");
-        cmd.add(scale);
+        TCLAP::ValueArg<string> fit_filename("f", "fit", "Fit to experimental profile", false, "", "file name", cmd);
 
-        water_weight_range ww_range;
-        TCLAP::ValueArg<float> water_weight("w", "water", "Weight of the water layer contribution.", false, 0, &ww_range);
-        cmd.add(water_weight);
+        TCLAP::ValueArg<float> scale("s", "scale", "SAXS profile intensity scale.", false, 1.0, "floating-point value", cmd);
 
-        expansion_range ef_range;
-        TCLAP::ValueArg<float> exp_factor("e", "exp_factor", "Excluded volume expansion factor.", false, 1, &ef_range);
-        cmd.add(exp_factor);
+        TCLAP::ValueArg<range_arg<water_weight_range>> water_weight("w", "water", "Weight of the water layer contribution.", false,
+            range_arg<water_weight_range>(), "range [,] or floating_point value", cmd);
 
-        TCLAP::ValueArg<unsigned int> q_n("n", "q_n", "Number of q values.", false, 500, "whole number");
-        cmd.add(q_n);
-        TCLAP::ValueArg<float> q_max("", "q_max", "Maximum value for q.", false, 0.75, "floating-point value");
-        cmd.add(q_max);
-        TCLAP::ValueArg<float> q_min("", "q_min", "Starting value for q.", false, 0, "floating-point value");
-        cmd.add(q_min);
+        TCLAP::ValueArg<range_arg<exp_factor_range>> exp_factor("e", "exp_factor", "Excluded volume expansion factor.", false,
+            range_arg<exp_factor_range>(), "range [,] or floating_point value", cmd);
 
-        TCLAP::ValueArg<string> out_filename("o", "outfile", "output file of SAXS intensities", true, "", "file name");
-        cmd.add(out_filename);
+        TCLAP::ValueArg<unsigned int> q_n("n", "q_n", "Number of q values.", false, 500, "whole number", cmd);
+        TCLAP::ValueArg<float> q_max("", "q_max", "Maximum value for q.", false, 0.75, "floating-point value", cmd);
+        TCLAP::ValueArg<float> q_min("", "q_min", "Starting value for q.", false, 0, "floating-point value", cmd);
 
         // A list of input PDB files
-        TCLAP::UnlabeledMultiArg<string> pdb_filenames("pdb_files", "input PDB file names", true, "");
-        cmd.add(pdb_filenames);
+        TCLAP::UnlabeledMultiArg<string> pdb_filenames("pdb_files", "input PDB file names", true, "", cmd);
+
+        TCLAP::ValueArg<string> out_filename("o", "outfile", "output file of SAXS intensities", true, "", "file name", cmd);
 
         cmd.parse(argc, argv);
+
+        if (!water_weight.getValue().singular() && fit_filename.getValue().empty())
+            throw TCLAP::ArgParseException("Range can't be used without an experimental profile; use a single value instead.");
+
+        if (!exp_factor.getValue().singular() && fit_filename.getValue().empty())
+            throw TCLAP::ArgParseException("Range can't be used without an experimental profile; use a single value instead.");
+
         unsigned int n_verbose_lvl = static_cast<unsigned int>(distance(verbose_choice.cbegin(), find(verbose_choice.cbegin(), verbose_choice.cend(), verbose_lvl.getValue())));
 
         //unsigned int n_steps = n_steps_arg.getValue();
         string device = dev_arg.getValue();
         //string algorithm = alg_arg.getValue();
         bool dp = dp_alg.getValue();
-
-        if (water_weight.isSet() && fit_filename.getValue().empty())
-            cout << "test";
 
         if (n_verbose_lvl >= calc_saxs<float>::NORMAL)
             std::cout << std::endl << "----- Calculating SAXS curve -----" << std::endl << std::endl;

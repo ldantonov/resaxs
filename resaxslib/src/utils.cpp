@@ -23,6 +23,7 @@
 #include <iostream>
 #include <cassert>
 #include <vector>
+#include <sstream>
 
 #include "../include/utils.hpp"
 
@@ -322,5 +323,31 @@ namespace resaxs
         return str.substr(pos1 == string::npos ? 0 : pos1,
             pos2 == string::npos ? str.length() - 1 : pos2 - pos1 + 1);
     }
-    
+
+    //
+    // Trim leading and trailing characters from a string
+    //
+    string trim(const string& str, const string& delim)
+    {
+        string::size_type pos1 = str.find_first_not_of(delim);
+        string::size_type pos2 = str.find_last_not_of(delim);
+        return str.substr(pos1 == string::npos ? 0 : pos1,
+            pos2 == string::npos ? str.length() - 1 : pos2 - pos1 + 1);
+    }
+
+    ///
+    /// Split a string at a specified delimiter, returning a vector of strings
+    ///
+    std::vector<std::string> split(const std::string &s, char delim)
+    {
+        std::vector<std::string> elems;
+        std::stringstream ss(s);
+        std::string item;
+        while (std::getline(ss, item, delim))
+        {
+            elems.push_back(std::move(item));
+        }
+        return elems;
+    }
+
 } // namespace
