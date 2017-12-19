@@ -89,14 +89,14 @@ struct exp_factor_range
 template <typename RANGE>
 struct range_arg : public RANGE
 {
-    float lo_ = default_;
-    float hi_ = default_;
+    float lo_ = this->default_;
+    float hi_ = this->default_;
 
     bool singular() const { return lo_ == hi_; }
 
     string min_max_str() const
     {
-        return string("[") + to_string(min_) + ',' + to_string(max_) + ']';
+        return string("[") + to_string(this->min_) + ',' + to_string(this->max_) + ']';
     }
 
     range_arg& operator=(const string& str)
@@ -116,7 +116,7 @@ struct range_arg : public RANGE
             iss.str(elems[1]);
             if (!(iss >> hi_))
                 throw TCLAP::ArgParseException(elems[1] + " is not a real number");
-            if (lo_ < min_ || hi_ > max_ || lo_ > hi_)
+            if (lo_ < this->min_ || hi_ > this->max_ || lo_ > hi_)
                 throw TCLAP::ArgParseException(s + " is not a valid range in " + min_max_str());
         }
         else if (elems.size() == 1)
@@ -127,7 +127,7 @@ struct range_arg : public RANGE
             if (!(iss >> lo_))
                 throw TCLAP::ArgParseException(elems[0] + " is not a real number");
             hi_ = lo_;
-            if (lo_ < min_ || hi_ > max_)
+            if (lo_ < this->min_ || hi_ > this->max_)
                 throw TCLAP::ArgParseException(elems[0] + " is not in the valid range " + min_max_str());
         }
         else
